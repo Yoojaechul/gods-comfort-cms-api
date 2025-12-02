@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+﻿import Fastify from "fastify";
 import cors from "@fastify/cors";
 import fastifyJwt from "@fastify/jwt";
 import staticFiles from "@fastify/static";
@@ -17,62 +17,59 @@ const __dirname = path.dirname(__filename);
 
 const app = Fastify({ logger: true });
 
-// JWT 설정
+// JWT ?ㅼ젙
 await app.register(fastifyJwt, {
   secret: process.env.JWT_SECRET || "change_this_jwt_secret_key_to_secure_random_string"
 });
 
-// CORS 설정
+// CORS ?ㅼ젙
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
 await app.register(cors, {
   origin: (origin, cb) => {
     const allowedOrigins = process.env.CORS_ORIGINS
       ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim())
-      : ["http://localhost:3000"]; // 기본값 설정
+      : ["http://localhost:3000"]; // 湲곕낯媛??ㅼ젙
 
-    // 개발 환경에서만 상세 로그
+    // 媛쒕컻 ?섍꼍?먯꽌留??곸꽭 濡쒓렇
     if (isDevelopment) {
-      console.log(`🌐 CORS Request from origin: ${origin}`);
+      console.log(`?뙋 CORS Request from origin: ${origin}`);
     }
 
-    // origin이 없으면 (curl/server-to-server) 허용
+    // origin???놁쑝硫?(curl/server-to-server) ?덉슜
     if (!origin) {
       cb(null, true);
       return;
     }
 
-    // 허용된 origin이면 통과
+    // ?덉슜??origin?대㈃ ?듦낵
     if (allowedOrigins.includes(origin)) {
       cb(null, true);
       return;
     }
 
-    // 허용되지 않은 origin (항상 로그)
-    console.warn(`🚫 CORS blocked: ${origin} (Allowed: ${allowedOrigins.join(", ")})`);
+    // ?덉슜?섏? ?딆? origin (??긽 濡쒓렇)
+    console.warn(`?슟 CORS blocked: ${origin} (Allowed: ${allowedOrigins.join(", ")})`);
     cb(new Error("Not allowed by CORS"), false);
   },
-  credentials: true, // 쿠키/인증 헤더 허용
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], // 허용 메서드
-  allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"], // 허용 헤더
-  exposedHeaders: ["Content-Length", "X-Total-Count"], // 클라이언트에서 접근 가능한 헤더
-  preflight: true, // preflight 요청 자동 처리
-  optionsSuccessStatus: 204, // OPTIONS 요청 응답 코드
-  preflightContinue: false, // preflight 후 다음 핸들러로 전달하지 않음
+  credentials: true, // 荑좏궎/?몄쬆 ?ㅻ뜑 ?덉슜
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], // ?덉슜 硫붿꽌??  allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"], // ?덉슜 ?ㅻ뜑
+  exposedHeaders: ["Content-Length", "X-Total-Count"], // ?대씪?댁뼵?몄뿉???묎렐 媛?ν븳 ?ㅻ뜑
+  preflight: true, // preflight ?붿껌 ?먮룞 泥섎━
+  optionsSuccessStatus: 204, // OPTIONS ?붿껌 ?묐떟 肄붾뱶
+  preflightContinue: false, // preflight ???ㅼ쓬 ?몃뱾?щ줈 ?꾨떖?섏? ?딆쓬
 });
 
-// 정적 파일 서빙 (Admin UI, Creator UI)
+// ?뺤쟻 ?뚯씪 ?쒕튃 (Admin UI, Creator UI)
 await app.register(staticFiles, {
   root: path.join(__dirname, "public"),
   prefix: "/",
   decorateReply: false
 });
 
-// DB 초기화
-initDB();
+// DB 珥덇린??initDB();
 
-// Admin 자동 생성 (부트스트랩 키로) - 개발 환경에서만
-const bootstrapKey = process.env.ADMIN_BOOTSTRAP_KEY || "change_this";
+// Admin ?먮룞 ?앹꽦 (遺?몄뒪?몃옪 ?ㅻ줈) - 媛쒕컻 ?섍꼍?먯꽌留?const bootstrapKey = process.env.ADMIN_BOOTSTRAP_KEY || "change_this";
 const existingAdmin = db.prepare("SELECT * FROM users WHERE role = 'admin'").get();
 if (!existingAdmin && isDevelopment) {
   const adminId = generateId();
@@ -82,19 +79,19 @@ if (!existingAdmin && isDevelopment) {
     "INSERT INTO users (id, name, role, status, api_key_hash, api_key_salt) VALUES (?, ?, ?, ?, ?, ?)"
   ).run(adminId, "Admin", "admin", "active", hash, salt);
   console.log("=".repeat(60));
-  console.log("✅ Admin 자동 생성 완료! (개발 환경)");
-  console.log("⚠️  API Key는 별도로 안전하게 관리하세요!");
+  console.log("??Admin ?먮룞 ?앹꽦 ?꾨즺! (媛쒕컻 ?섍꼍)");
+  console.log("?좑툘  API Key??蹂꾨룄濡??덉쟾?섍쾶 愿由ы븯?몄슂!");
   console.log("=".repeat(60));
 }
 
-// ==================== 공용 엔드포인트 ====================
+// ==================== 怨듭슜 ?붾뱶?ъ씤??====================
 
 // Health check
 app.get("/health", async (request, reply) => {
   return { ok: true, time: new Date().toISOString() };
 });
 
-// 방문자 로깅
+// 諛⑸Ц??濡쒓퉭
 app.post("/public/log-visit", async (request, reply) => {
   const { site_id, language, page_url } = request.body;
   
@@ -107,8 +104,8 @@ app.post("/public/log-visit", async (request, reply) => {
     const ipAddress = request.ip || request.headers['x-forwarded-for'] || 'unknown';
     const userAgent = request.headers['user-agent'] || '';
 
-    // 간단한 IP 기반 국가 추정 (실제로는 GeoIP 서비스 사용 권장)
-    // 여기서는 기본값 사용
+    // 媛꾨떒??IP 湲곕컲 援?? 異붿젙 (?ㅼ젣濡쒕뒗 GeoIP ?쒕퉬???ъ슜 沅뚯옣)
+    // ?ш린?쒕뒗 湲곕낯媛??ъ슜
     let countryCode = 'KR';
     let countryName = 'South Korea';
 
@@ -118,12 +115,12 @@ app.post("/public/log-visit", async (request, reply) => {
 
     return { success: true, id: visitId };
   } catch (err) {
-    console.error("방문자 로깅 오류:", err);
+    console.error("諛⑸Ц??濡쒓퉭 ?ㅻ쪟:", err);
     return reply.code(500).send({ error: "Failed to log visit" });
   }
 });
 
-// 공개 영상 조회
+// 怨듦컻 ?곸긽 議고쉶
 app.get("/public/videos", async (request, reply) => {
   const { site_id, platform, limit = 20, cursor, page = 1 } = request.query;
 
@@ -131,11 +128,11 @@ app.get("/public/videos", async (request, reply) => {
     return reply.code(400).send({ error: "site_id query parameter is required" });
   }
 
-  // limit 제한: 기본 20, 최대 100
+  // limit ?쒗븳: 湲곕낯 20, 理쒕? 100
   const safeLimit = Math.min(Math.max(parseInt(limit) || 20, 1), 100);
   const currentPage = Math.max(parseInt(page) || 1, 1);
 
-  // 전체 개수 조회
+  // ?꾩껜 媛쒖닔 議고쉶
   let countQuery = "SELECT COUNT(*) as total FROM videos v WHERE v.site_id = ? AND v.visibility = 'public'";
   const countParams = [site_id];
 
@@ -146,7 +143,7 @@ app.get("/public/videos", async (request, reply) => {
 
   const { total } = db.prepare(countQuery).get(...countParams);
 
-  // 영상 목록 조회
+  // ?곸긽 紐⑸줉 議고쉶
   let query = "SELECT v.*, u.name as owner_name FROM videos v LEFT JOIN users u ON v.owner_id = u.id WHERE v.site_id = ? AND v.visibility = 'public'";
   const params = [site_id];
 
@@ -165,15 +162,15 @@ app.get("/public/videos", async (request, reply) => {
 
   const videos = db.prepare(query).all(...params);
 
-  // video_id 계산 (없는 경우)
+  // video_id 怨꾩궛 (?녿뒗 寃쎌슦)
   const enhancedVideos = videos.map((video) => {
     let videoId = video.video_id;
     
-    // video_id가 없으면 source_url에서 추출 시도
+    // video_id媛 ?놁쑝硫?source_url?먯꽌 異붿텧 ?쒕룄
     if (!videoId && video.platform === "youtube") {
       videoId = extractYouTubeVideoId(video.source_url);
     } else if (!videoId && video.platform === "facebook") {
-      // Facebook URL에서 video ID 추출 (간단한 패턴)
+      // Facebook URL?먯꽌 video ID 異붿텧 (媛꾨떒???⑦꽩)
       const match = video.source_url.match(/\/videos\/(\d+)/);
       videoId = match ? match[1] : null;
     }
@@ -181,14 +178,14 @@ app.get("/public/videos", async (request, reply) => {
     return {
       ...video,
       video_id: videoId,
-      // status가 없으면 기본값 설정
+      // status媛 ?놁쑝硫?湲곕낯媛??ㅼ젙
       status: video.status || 'active',
-      // language가 없으면 기본값 설정
+      // language媛 ?놁쑝硫?湲곕낯媛??ㅼ젙
       language: video.language || 'en',
     };
   });
 
-  // 표준 응답 형식 (items, total, page, page_size)
+  // ?쒖? ?묐떟 ?뺤떇 (items, total, page, page_size)
   return {
     items: enhancedVideos,
     total,
@@ -198,9 +195,9 @@ app.get("/public/videos", async (request, reply) => {
   };
 });
 
-// ==================== 인증 필요 엔드포인트 ====================
+// ==================== ?몄쬆 ?꾩슂 ?붾뱶?ъ씤??====================
 
-// 현재 사용자 정보
+// ?꾩옱 ?ъ슜???뺣낫
 app.get("/me", { preHandler: authenticate }, async (request, reply) => {
   const user = request.user;
   const site = user.site_id
@@ -218,22 +215,21 @@ app.get("/me", { preHandler: authenticate }, async (request, reply) => {
   };
 });
 
-// 이메일/비밀번호 로그인
-app.post("/auth/login", async (request, reply) => {
+// ?대찓??鍮꾨?踰덊샇 濡쒓렇??app.post("/auth/login", async (request, reply) => {
   const { email, password } = request.body;
 
   if (!email) {
     return reply.code(400).send({ error: "email is required" });
   }
 
-  // 이메일로 사용자 조회
+  // ?대찓?쇰줈 ?ъ슜??議고쉶
   const user = db.prepare("SELECT * FROM users WHERE email = ? AND status = 'active'").get(email);
 
   if (!user) {
     return reply.code(401).send({ error: "Invalid email" });
   }
 
-  // 비밀번호가 설정되지 않은 경우 (최초 로그인)
+  // 鍮꾨?踰덊샇媛 ?ㅼ젙?섏? ?딆? 寃쎌슦 (理쒖큹 濡쒓렇??
   if (!user.password_hash) {
     return reply.code(403).send({ 
       error: "Password not set",
@@ -244,17 +240,17 @@ app.post("/auth/login", async (request, reply) => {
     });
   }
 
-  // 비밀번호 필수
+  // 鍮꾨?踰덊샇 ?꾩닔
   if (!password) {
     return reply.code(400).send({ error: "password is required" });
   }
 
-  // 비밀번호 검증 (password_hash를 salt로 사용)
+  // 鍮꾨?踰덊샇 寃利?(password_hash瑜?salt濡??ъ슜)
   if (!verifyPassword(password, user.password_hash, user.api_key_salt)) {
     return reply.code(401).send({ error: "Invalid email or password" });
   }
 
-  // JWT 토큰 생성
+  // JWT ?좏겙 ?앹꽦
   const token = generateToken(user);
   const expiry = getTokenExpiry(token);
 
@@ -271,7 +267,7 @@ app.post("/auth/login", async (request, reply) => {
   };
 });
 
-// 최초 비밀번호 설정
+// 理쒖큹 鍮꾨?踰덊샇 ?ㅼ젙
 app.post("/auth/setup-password", async (request, reply) => {
   const { email, new_password, new_email } = request.body;
 
@@ -279,25 +275,25 @@ app.post("/auth/setup-password", async (request, reply) => {
     return reply.code(400).send({ error: "email and new_password are required" });
   }
 
-  // 사용자 조회
+  // ?ъ슜??議고쉶
   const user = db.prepare("SELECT * FROM users WHERE email = ? AND status = 'active'").get(email);
 
   if (!user) {
     return reply.code(404).send({ error: "User not found" });
   }
 
-  // 이미 비밀번호가 설정된 경우
+  // ?대? 鍮꾨?踰덊샇媛 ?ㅼ젙??寃쎌슦
   if (user.password_hash) {
     return reply.code(400).send({ error: "Password already set. Use change-password instead." });
   }
 
-  // 비밀번호 해싱
+  // 鍮꾨?踰덊샇 ?댁떛
   const { hash, salt } = hashPassword(new_password);
 
-  // 이메일 변경 여부 확인 (크리에이터의 경우)
+  // ?대찓??蹂寃??щ? ?뺤씤 (?щ━?먯씠?곗쓽 寃쎌슦)
   let updateEmail = email;
   if (new_email && new_email !== email) {
-    // 이메일 중복 확인
+    // ?대찓??以묐났 ?뺤씤
     const existing = db.prepare("SELECT * FROM users WHERE email = ? AND id != ?").get(new_email, user.id);
     if (existing) {
       return reply.code(409).send({ error: "Email already exists" });
@@ -305,14 +301,14 @@ app.post("/auth/setup-password", async (request, reply) => {
     updateEmail = new_email;
   }
 
-  // 비밀번호 및 이메일 설정
+  // 鍮꾨?踰덊샇 諛??대찓???ㅼ젙
   db.prepare(
     "UPDATE users SET email = ?, password_hash = ?, api_key_salt = ?, updated_at = datetime('now') WHERE id = ?"
   ).run(updateEmail, hash, salt, user.id);
 
-  console.log(`✅ 최초 비밀번호 설정: ${updateEmail}`);
+  console.log(`??理쒖큹 鍮꾨?踰덊샇 ?ㅼ젙: ${updateEmail}`);
 
-  // JWT 토큰 생성
+  // JWT ?좏겙 ?앹꽦
   const updatedUser = db.prepare("SELECT * FROM users WHERE id = ?").get(user.id);
   const token = generateToken(updatedUser);
   const expiry = getTokenExpiry(token);
@@ -330,8 +326,7 @@ app.post("/auth/setup-password", async (request, reply) => {
   };
 });
 
-// 비밀번호 변경
-app.post("/auth/change-password", { preHandler: authenticate }, async (request, reply) => {
+// 鍮꾨?踰덊샇 蹂寃?app.post("/auth/change-password", { preHandler: authenticate }, async (request, reply) => {
   const { current_password, new_password } = request.body;
   const user = request.user;
 
@@ -339,25 +334,25 @@ app.post("/auth/change-password", { preHandler: authenticate }, async (request, 
     return reply.code(400).send({ error: "current_password and new_password are required" });
   }
 
-  // 현재 비밀번호 확인
+  // ?꾩옱 鍮꾨?踰덊샇 ?뺤씤
   if (!verifyPassword(current_password, user.password_hash, user.api_key_salt)) {
     return reply.code(401).send({ error: "Current password is incorrect" });
   }
 
-  // 새 비밀번호 해싱
+  // ??鍮꾨?踰덊샇 ?댁떛
   const { hash, salt } = hashPassword(new_password);
 
-  // 비밀번호 업데이트
+  // 鍮꾨?踰덊샇 ?낅뜲?댄듃
   db.prepare(
     "UPDATE users SET password_hash = ?, api_key_salt = ?, updated_at = datetime('now') WHERE id = ?"
   ).run(hash, salt, user.id);
 
-  console.log(`✅ 비밀번호 변경: ${user.email}`);
+  console.log(`??鍮꾨?踰덊샇 蹂寃? ${user.email}`);
 
   return { success: true, message: "Password changed successfully" };
 });
 
-// 프로필 수정 (이메일, 이름)
+// ?꾨줈???섏젙 (?대찓?? ?대쫫)
 app.patch("/auth/profile", { preHandler: authenticate }, async (request, reply) => {
   const { name, email } = request.body;
   const user = request.user;
@@ -371,7 +366,7 @@ app.patch("/auth/profile", { preHandler: authenticate }, async (request, reply) 
   }
 
   if (email !== undefined && email !== user.email) {
-    // 이메일 중복 확인
+    // ?대찓??以묐났 ?뺤씤
     const existing = db.prepare("SELECT * FROM users WHERE email = ? AND id != ?").get(email, user.id);
     if (existing) {
       return reply.code(409).send({ error: "Email already exists" });
@@ -401,9 +396,9 @@ app.patch("/auth/profile", { preHandler: authenticate }, async (request, reply) 
   };
 });
 
-// ==================== Admin 전용 엔드포인트 ====================
+// ==================== Admin ?꾩슜 ?붾뱶?ъ씤??====================
 
-// 사이트 생성
+// ?ъ씠???앹꽦
 app.post(
   "/admin/sites",
   { preHandler: [authenticate, requireAdmin] },
@@ -426,7 +421,7 @@ app.post(
   }
 );
 
-// 사이트 목록 조회
+// ?ъ씠??紐⑸줉 議고쉶
 app.get(
   "/admin/sites",
   { preHandler: [authenticate, requireAdmin] },
@@ -436,7 +431,7 @@ app.get(
   }
 );
 
-// Creator 생성
+// Creator ?앹꽦
 app.post(
   "/admin/creators",
   { preHandler: [authenticate, requireAdmin] },
@@ -447,13 +442,13 @@ app.post(
       return reply.code(400).send({ error: "site_id and name are required" });
     }
 
-    // site_id 존재 확인
+    // site_id 議댁옱 ?뺤씤
     const site = db.prepare("SELECT * FROM sites WHERE id = ?").get(site_id);
     if (!site) {
       return reply.code(404).send({ error: "Site not found" });
     }
 
-    // 이메일 중복 확인
+    // ?대찓??以묐났 ?뺤씤
     if (email) {
       const existing = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
       if (existing) {
@@ -465,7 +460,7 @@ app.post(
     const apiKey = generateApiKey();
     const { hash: apiKeyHash, salt: apiKeySalt } = hashApiKey(apiKey);
 
-    // 비밀번호 해싱 (제공된 경우)
+    // 鍮꾨?踰덊샇 ?댁떛 (?쒓났??寃쎌슦)
     let passwordHash = null;
     if (password) {
       const { hash } = hashPassword(password);
@@ -481,12 +476,12 @@ app.post(
       site_id,
       name,
       email: email || null,
-      api_key: apiKey, // 평문 키는 생성 시 1회만 반환
+      api_key: apiKey, // ?됰Ц ?ㅻ뒗 ?앹꽦 ??1?뚮쭔 諛섑솚
     };
   }
 );
 
-// Creator 목록 조회
+// Creator 紐⑸줉 議고쉶
 app.get(
   "/admin/creators",
   { preHandler: [authenticate, requireAdmin] },
@@ -508,7 +503,7 @@ app.get(
   }
 );
 
-// Creator 정보 수정
+// Creator ?뺣낫 ?섏젙
 app.patch(
   "/admin/creators/:id",
   { preHandler: [authenticate, requireAdmin] },
@@ -552,8 +547,7 @@ app.patch(
   }
 );
 
-// Creator 키 재발급
-app.post(
+// Creator ???щ컻湲?app.post(
   "/admin/creators/:id/rotate-key",
   { preHandler: [authenticate, requireAdmin] },
   async (request, reply) => {
@@ -578,12 +572,12 @@ app.post(
 
     return {
       id: creator.id,
-      api_key: apiKey, // 평문 키는 재발급 시 1회만 반환
+      api_key: apiKey, // ?됰Ц ?ㅻ뒗 ?щ컻湲???1?뚮쭔 諛섑솚
     };
   }
 );
 
-// Admin - 방문자 통계
+// Admin - 諛⑸Ц???듦퀎
 app.get(
   "/admin/analytics",
   { preHandler: [authenticate, requireAdmin] },
@@ -597,12 +591,12 @@ app.get(
     let startDateStr;
     let endDateStr;
 
-    // 커스텀 날짜 범위가 제공된 경우
+    // 而ㅼ뒪? ?좎쭨 踰붿쐞媛 ?쒓났??寃쎌슦
     if (start_date && end_date) {
       startDateStr = start_date;
       endDateStr = end_date;
     } else {
-      // 기간별 날짜 계산
+      // 湲곌컙蹂??좎쭨 怨꾩궛
       const now = new Date();
       let startDate;
       
@@ -633,22 +627,21 @@ app.get(
       endDateStr = now.toISOString().split('T')[0];
     }
 
-    // 총 방문자 수
-    const totalVisits = db.prepare(
+    // 珥?諛⑸Ц????    const totalVisits = db.prepare(
       "SELECT COUNT(*) as count FROM visits WHERE site_id = ? AND date(created_at) >= ? AND date(created_at) <= ?"
     ).get(site_id, startDateStr, endDateStr);
 
-    // 국가별 통계
+    // 援??蹂??듦퀎
     const byCountry = db.prepare(
       "SELECT country_code, country_name, COUNT(*) as count FROM visits WHERE site_id = ? AND date(created_at) >= ? AND date(created_at) <= ? GROUP BY country_code, country_name ORDER BY count DESC"
     ).all(site_id, startDateStr, endDateStr);
 
-    // 언어별 통계
+    // ?몄뼱蹂??듦퀎
     const byLanguage = db.prepare(
       "SELECT language, COUNT(*) as count FROM visits WHERE site_id = ? AND date(created_at) >= ? AND date(created_at) <= ? GROUP BY language ORDER BY count DESC"
     ).all(site_id, startDateStr, endDateStr);
 
-    // 일별 방문자 추이
+    // ?쇰퀎 諛⑸Ц??異붿씠
     const dailyTrend = db.prepare(
       "SELECT date(created_at) as date, COUNT(*) as count FROM visits WHERE site_id = ? AND date(created_at) >= ? AND date(created_at) <= ? GROUP BY date(created_at) ORDER BY date DESC LIMIT 90"
     ).all(site_id, startDateStr, endDateStr);
@@ -667,7 +660,7 @@ app.get(
   }
 );
 
-// Admin - Videos 전체 조회 (사이트 필터 가능)
+// Admin - Videos ?꾩껜 議고쉶 (?ъ씠???꾪꽣 媛??
 app.get(
   "/admin/videos",
   { preHandler: [authenticate, requireAdmin] },
@@ -700,7 +693,7 @@ app.get(
   }
 );
 
-// Admin - Video 삭제
+// Admin - Video ??젣
 app.delete(
   "/admin/videos/:id",
   { preHandler: [authenticate, requireAdmin] },
@@ -717,7 +710,7 @@ app.delete(
   }
 );
 
-// Admin - 일괄 삭제
+// Admin - ?쇨큵 ??젣
 app.post(
   "/admin/videos/batch-delete",
   { preHandler: [authenticate, requireAdmin] },
@@ -739,13 +732,13 @@ app.post(
         deleted_count: result.changes,
       };
     } catch (err) {
-      console.error("일괄 삭제 오류:", err);
+      console.error("?쇨큵 ??젣 ?ㅻ쪟:", err);
       return reply.code(500).send({ error: "Batch delete failed" });
     }
   }
 );
 
-// Admin - Video 수정 (모든 필드)
+// Admin - Video ?섏젙 (紐⑤뱺 ?꾨뱶)
 app.patch(
   "/admin/videos/:id",
   { preHandler: [authenticate, requireAdmin] },
@@ -753,7 +746,7 @@ app.patch(
     const { id } = request.params;
     const { platform, source_url, title, thumbnail_url, visibility, language, status } = request.body;
 
-    // 영상 존재 확인
+    // ?곸긽 議댁옱 ?뺤씤
     const existing = db.prepare("SELECT * FROM videos WHERE id = ?").get(id);
 
     if (!existing) {
@@ -802,8 +795,7 @@ app.patch(
       return reply.code(400).send({ error: "No fields to update" });
     }
 
-    // source_url이나 platform이 변경되면 메타정보 및 video_id 재생성
-    if (source_url !== undefined || platform !== undefined) {
+    // source_url?대굹 platform??蹂寃쎈릺硫?硫뷀??뺣낫 諛?video_id ?ъ깮??    if (source_url !== undefined || platform !== undefined) {
       const finalPlatform = platform || existing.platform;
       const finalSourceUrl = source_url || existing.source_url;
       const finalTitle = title !== undefined ? title : existing.title;
@@ -826,7 +818,7 @@ app.patch(
         params.push(metadata.embed_url);
       }
 
-      // video_id 추출 및 업데이트
+      // video_id 異붿텧 諛??낅뜲?댄듃
       let extractedVideoId = null;
       if (finalPlatform === "youtube") {
         extractedVideoId = extractYouTubeVideoId(finalSourceUrl);
@@ -852,7 +844,7 @@ app.patch(
   }
 );
 
-// Admin - Video Stats 수정
+// Admin - Video Stats ?섏젙
 app.patch(
   "/admin/videos/:id/stats",
   { preHandler: [authenticate, requireAdmin] },
@@ -861,14 +853,14 @@ app.patch(
     const { views_count, likes_count, shares_count } = request.body;
     const user = request.user;
 
-    // 현재 영상 정보 조회
+    // ?꾩옱 ?곸긽 ?뺣낫 議고쉶
     const video = db.prepare("SELECT * FROM videos WHERE id = ?").get(id);
 
     if (!video) {
       return reply.code(404).send({ error: "Video not found" });
     }
 
-    // 변경 로그 기록
+    // 蹂寃?濡쒓렇 湲곕줉
     const logId = generateId();
     db.prepare(
       "INSERT INTO stats_adjustments (id, video_id, admin_id, old_views, new_views, old_likes, new_likes, old_shares, new_shares) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -884,7 +876,7 @@ app.patch(
       shares_count !== undefined ? shares_count : video.shares_count || 0
     );
 
-    // Stats 업데이트
+    // Stats ?낅뜲?댄듃
     const updates = [];
     const params = [];
 
@@ -919,9 +911,9 @@ app.patch(
   }
 );
 
-// ==================== Creator 전용 엔드포인트 ====================
+// ==================== Creator ?꾩슜 ?붾뱶?ъ씤??====================
 
-// Creator - Videos 조회 (자기 것만)
+// Creator - Videos 議고쉶 (?먭린 寃껊쭔)
 app.get(
   "/videos",
   { preHandler: [authenticate, requireCreator] },
@@ -929,8 +921,7 @@ app.get(
     const { site_id } = request.query;
     const user = request.user;
 
-    // creator는 자기 site_id만 접근 가능
-    const targetSiteId = site_id || user.site_id;
+    // creator???먭린 site_id留??묎렐 媛??    const targetSiteId = site_id || user.site_id;
 
     if (targetSiteId !== user.site_id) {
       return reply.code(403).send({ error: "Access denied to this site_id" });
@@ -946,7 +937,7 @@ app.get(
   }
 );
 
-// Creator - 일괄 영상 생성
+// Creator - ?쇨큵 ?곸긽 ?앹꽦
 app.post(
   "/videos/batch",
   { preHandler: [authenticate, requireCreator] },
@@ -962,7 +953,7 @@ app.post(
       return reply.code(400).send({ error: "Maximum 20 videos per batch" });
     }
 
-    // Admin은 site_id 지정 가능, Creator는 자기 site_id 사용
+    // Admin? site_id 吏??媛?? Creator???먭린 site_id ?ъ슜
     let siteId;
     if (user.role === "admin") {
       siteId = site_id;
@@ -988,10 +979,10 @@ app.post(
           continue;
         }
 
-        // 메타정보 자동 보강
+        // 硫뷀??뺣낫 ?먮룞 蹂닿컯
         const metadata = await enrichMetadata(platform, source_url, title, thumbnail_url);
 
-        // video_id 추출
+        // video_id 異붿텧
         let extractedVideoId = null;
         if (platform === "youtube") {
           extractedVideoId = extractYouTubeVideoId(source_url);
@@ -1035,7 +1026,7 @@ app.post(
   }
 );
 
-// Creator - Video 생성 (Admin도 사용 가능)
+// Creator - Video ?앹꽦 (Admin???ъ슜 媛??
 app.post(
   "/videos",
   { preHandler: [authenticate, requireCreator] },
@@ -1047,26 +1038,26 @@ app.post(
       return reply.code(400).send({ error: "platform and source_url are required" });
     }
 
-    // Admin은 site_id를 지정 가능, Creator는 자기 site_id로 강제
+    // Admin? site_id瑜?吏??媛?? Creator???먭린 site_id濡?媛뺤젣
     let siteId;
     if (user.role === "admin") {
-      // Admin: body에서 site_id 받기 (없으면 에러)
+      // Admin: body?먯꽌 site_id 諛쏄린 (?놁쑝硫??먮윭)
       siteId = site_id;
       if (!siteId) {
         return reply.code(400).send({ error: "Admin must provide site_id" });
       }
     } else {
-      // Creator: 자기 site_id 사용
+      // Creator: ?먭린 site_id ?ъ슜
       siteId = user.site_id;
       if (!siteId) {
         return reply.code(400).send({ error: "Creator must have a site_id" });
       }
     }
 
-    // 메타정보 자동 보강
+    // 硫뷀??뺣낫 ?먮룞 蹂닿컯
     const metadata = await enrichMetadata(platform, source_url, title, thumbnail_url);
 
-    // video_id 추출
+    // video_id 異붿텧
     let extractedVideoId = null;
     if (platform === "youtube") {
       extractedVideoId = extractYouTubeVideoId(source_url);
@@ -1098,7 +1089,7 @@ app.post(
   }
 );
 
-// Creator - Video 수정
+// Creator - Video ?섏젙
 app.patch(
   "/videos/:id",
   { preHandler: [authenticate, requireCreator] },
@@ -1107,7 +1098,7 @@ app.patch(
     const { platform, source_url, title, thumbnail_url, visibility, language, status } = request.body;
     const user = request.user;
 
-    // 본인 소유 확인
+    // 蹂몄씤 ?뚯쑀 ?뺤씤
     const existing = db
       .prepare("SELECT * FROM videos WHERE id = ? AND owner_id = ?")
       .get(id, user.id);
@@ -1158,8 +1149,7 @@ app.patch(
       return reply.code(400).send({ error: "No fields to update" });
     }
 
-    // source_url이나 platform이 변경되면 메타정보 및 video_id 재생성
-    if (source_url !== undefined || platform !== undefined) {
+    // source_url?대굹 platform??蹂寃쎈릺硫?硫뷀??뺣낫 諛?video_id ?ъ깮??    if (source_url !== undefined || platform !== undefined) {
       const finalPlatform = platform || existing.platform;
       const finalSourceUrl = source_url || existing.source_url;
       const finalTitle = title !== undefined ? title : existing.title;
@@ -1182,7 +1172,7 @@ app.patch(
         params.push(metadata.embed_url);
       }
 
-      // video_id 추출 및 업데이트
+      // video_id 異붿텧 諛??낅뜲?댄듃
       let extractedVideoId = null;
       if (finalPlatform === "youtube") {
         extractedVideoId = extractYouTubeVideoId(finalSourceUrl);
@@ -1208,7 +1198,7 @@ app.patch(
   }
 );
 
-// Creator - Video 삭제
+// Creator - Video ??젣
 app.delete(
   "/videos/:id",
   { preHandler: [authenticate, requireCreator] },
@@ -1216,7 +1206,7 @@ app.delete(
     const { id } = request.params;
     const user = request.user;
 
-    // 본인 소유 확인
+    // 蹂몄씤 ?뚯쑀 ?뺤씤
     const result = db
       .prepare("DELETE FROM videos WHERE id = ? AND owner_id = ?")
       .run(id, user.id);
@@ -1229,7 +1219,7 @@ app.delete(
   }
 );
 
-// Creator - 일괄 삭제
+// Creator - ?쇨큵 ??젣
 app.post(
   "/videos/batch-delete",
   { preHandler: [authenticate, requireCreator] },
@@ -1244,15 +1234,14 @@ app.post(
     try {
       let deletedCount = 0;
 
-      // Admin이면 모든 영상 삭제 가능, Creator는 본인 영상만
-      if (user.role === "admin") {
+      // Admin?대㈃ 紐⑤뱺 ?곸긽 ??젣 媛?? Creator??蹂몄씤 ?곸긽留?      if (user.role === "admin") {
         const placeholders = video_ids.map(() => "?").join(",");
         const result = db.prepare(
           `DELETE FROM videos WHERE id IN (${placeholders})`
         ).run(...video_ids);
         deletedCount = result.changes;
       } else {
-        // Creator: 본인 영상만 삭제
+        // Creator: 蹂몄씤 ?곸긽留???젣
         for (const videoId of video_ids) {
           const result = db
             .prepare("DELETE FROM videos WHERE id = ? AND owner_id = ?")
@@ -1266,13 +1255,13 @@ app.post(
         deleted_count: deletedCount,
       };
     } catch (err) {
-      console.error("일괄 삭제 오류:", err);
+      console.error("?쇨큵 ??젣 ?ㅻ쪟:", err);
       return reply.code(500).send({ error: "Batch delete failed" });
     }
   }
 );
 
-// Creator - 플랫폼 키 조회
+// Creator - ?뚮옯????議고쉶
 app.get(
   "/my/provider-keys",
   { preHandler: [authenticate, requireCreator] },
@@ -1287,7 +1276,7 @@ app.get(
   }
 );
 
-// Creator - 플랫폼 키 저장/수정 (upsert)
+// Creator - ?뚮옯????????섏젙 (upsert)
 app.put(
   "/my/provider-keys",
   { preHandler: [authenticate, requireCreator] },
@@ -1299,7 +1288,7 @@ app.put(
       return reply.code(400).send({ error: "provider, key_name, and key_value are required" });
     }
 
-    // 기존 키 확인
+    // 湲곗〈 ???뺤씤
     const existing = db
       .prepare(
         "SELECT * FROM user_provider_keys WHERE user_id = ? AND provider = ? AND key_name = ?"
@@ -1307,7 +1296,7 @@ app.put(
       .get(user.id, provider, key_name);
 
     if (existing) {
-      // 업데이트
+      // ?낅뜲?댄듃
       db.prepare(
         "UPDATE user_provider_keys SET key_value = ?, updated_at = datetime('now') WHERE id = ?"
       ).run(key_value, existing.id);
@@ -1316,7 +1305,7 @@ app.put(
         .get(existing.id);
       return updated;
     } else {
-      // 생성
+      // ?앹꽦
       const keyId = generateId();
       db.prepare(
         "INSERT INTO user_provider_keys (id, user_id, provider, key_name, key_value) VALUES (?, ?, ?, ?, ?)"
@@ -1327,7 +1316,7 @@ app.put(
   }
 );
 
-// Creator - 플랫폼 키 삭제
+// Creator - ?뚮옯??????젣
 app.delete(
   "/my/provider-keys/:id",
   { preHandler: [authenticate, requireCreator] },
@@ -1335,7 +1324,7 @@ app.delete(
     const { id } = request.params;
     const user = request.user;
 
-    // 본인 소유 확인
+    // 蹂몄씤 ?뚯쑀 ?뺤씤
     const result = db
       .prepare("DELETE FROM user_provider_keys WHERE id = ? AND user_id = ?")
       .run(id, user.id);
@@ -1348,16 +1337,16 @@ app.delete(
   }
 );
 
-// 서버 시작
+// ?쒕쾭 ?쒖옉
 const PORT = process.env.PORT || 8787;
 app.listen({ port: PORT, host: "0.0.0.0" }, (err, address) => {
   if (err) {
     app.log.error(err);
     process.exit(1);
   }
-  console.log(`✅ CMS API Server running on ${address}`);
-  console.log(`📊 Admin UI: http://localhost:${PORT}/admin`);
-  console.log(`🎨 Creator UI: http://localhost:${PORT}/creator`);
+  console.log(`??CMS API Server running on ${address}`);
+  console.log(`?뱤 Admin UI: http://localhost:${PORT}/admin`);
+  console.log(`?렓 Creator UI: http://localhost:${PORT}/creator`);
 });
 
 
@@ -1370,682 +1359,3 @@ app.listen({ port: PORT, host: "0.0.0.0" }, (err, address) => {
     if (site_id) {
       query += " AND v.site_id = ?";
       params.push(site_id);
-    }
-
-    if (cursor) {
-      query += " AND v.created_at < ?";
-      params.push(cursor);
-    }
-
-    query += " ORDER BY v.created_at DESC LIMIT ?";
-    params.push(parseInt(limit));
-
-    const videos = db.prepare(query).all(...params);
-
-    return {
-      videos,
-      cursor: videos.length > 0 ? videos[videos.length - 1].created_at : null,
-    };
-  }
-);
-
-// Admin - Video 삭제
-app.delete(
-  "/admin/videos/:id",
-  { preHandler: [authenticate, requireAdmin] },
-  async (request, reply) => {
-    const { id } = request.params;
-
-    const result = db.prepare("DELETE FROM videos WHERE id = ?").run(id);
-
-    if (result.changes === 0) {
-      return reply.code(404).send({ error: "Video not found" });
-    }
-
-    return { success: true };
-  }
-);
-
-// Admin - 일괄 삭제
-app.post(
-  "/admin/videos/batch-delete",
-  { preHandler: [authenticate, requireAdmin] },
-  async (request, reply) => {
-    const { video_ids } = request.body;
-
-    if (!video_ids || !Array.isArray(video_ids) || video_ids.length === 0) {
-      return reply.code(400).send({ error: "video_ids array is required" });
-    }
-
-    try {
-      const placeholders = video_ids.map(() => "?").join(",");
-      const result = db.prepare(
-        `DELETE FROM videos WHERE id IN (${placeholders})`
-      ).run(...video_ids);
-
-      return {
-        success: true,
-        deleted_count: result.changes,
-      };
-    } catch (err) {
-      console.error("일괄 삭제 오류:", err);
-      return reply.code(500).send({ error: "Batch delete failed" });
-    }
-  }
-);
-
-// Admin - Video 수정 (모든 필드)
-app.patch(
-  "/admin/videos/:id",
-  { preHandler: [authenticate, requireAdmin] },
-  async (request, reply) => {
-    const { id } = request.params;
-    const { platform, source_url, title, thumbnail_url, visibility, language, status } = request.body;
-
-    // 영상 존재 확인
-    const existing = db.prepare("SELECT * FROM videos WHERE id = ?").get(id);
-
-    if (!existing) {
-      return reply.code(404).send({ error: "Video not found" });
-    }
-
-    const updates = [];
-    const params = [];
-
-    if (platform !== undefined) {
-      updates.push("platform = ?");
-      params.push(platform);
-    }
-
-    if (source_url !== undefined) {
-      updates.push("source_url = ?");
-      params.push(source_url);
-    }
-
-    if (title !== undefined) {
-      updates.push("title = ?");
-      params.push(title);
-    }
-
-    if (thumbnail_url !== undefined) {
-      updates.push("thumbnail_url = ?");
-      params.push(thumbnail_url);
-    }
-
-    if (visibility !== undefined) {
-      updates.push("visibility = ?");
-      params.push(visibility);
-    }
-
-    if (language !== undefined) {
-      updates.push("language = ?");
-      params.push(language);
-    }
-
-    if (status !== undefined) {
-      updates.push("status = ?");
-      params.push(status);
-    }
-
-    if (updates.length === 0) {
-      return reply.code(400).send({ error: "No fields to update" });
-    }
-
-    // source_url이나 platform이 변경되면 메타정보 및 video_id 재생성
-    if (source_url !== undefined || platform !== undefined) {
-      const finalPlatform = platform || existing.platform;
-      const finalSourceUrl = source_url || existing.source_url;
-      const finalTitle = title !== undefined ? title : existing.title;
-      const finalThumbnail = thumbnail_url !== undefined ? thumbnail_url : existing.thumbnail_url;
-
-      const metadata = await enrichMetadata(finalPlatform, finalSourceUrl, finalTitle, finalThumbnail);
-
-      if (metadata.title !== null && title === undefined) {
-        updates.push("title = ?");
-        params.push(metadata.title);
-      }
-
-      if (metadata.thumbnail_url !== null && thumbnail_url === undefined) {
-        updates.push("thumbnail_url = ?");
-        params.push(metadata.thumbnail_url);
-      }
-
-      if (metadata.embed_url !== null) {
-        updates.push("embed_url = ?");
-        params.push(metadata.embed_url);
-      }
-
-      // video_id 추출 및 업데이트
-      let extractedVideoId = null;
-      if (finalPlatform === "youtube") {
-        extractedVideoId = extractYouTubeVideoId(finalSourceUrl);
-      } else if (finalPlatform === "facebook") {
-        const match = finalSourceUrl.match(/\/videos\/(\d+)/);
-        extractedVideoId = match ? match[1] : null;
-      }
-
-      if (extractedVideoId) {
-        updates.push("video_id = ?");
-        params.push(extractedVideoId);
-      }
-    }
-
-    params.push(id);
-
-    db.prepare(
-      `UPDATE videos SET ${updates.join(", ")}, updated_at = datetime('now') WHERE id = ?`
-    ).run(...params);
-
-    const video = db.prepare("SELECT * FROM videos WHERE id = ?").get(id);
-    return video;
-  }
-);
-
-// Admin - Video Stats 수정
-app.patch(
-  "/admin/videos/:id/stats",
-  { preHandler: [authenticate, requireAdmin] },
-  async (request, reply) => {
-    const { id } = request.params;
-    const { views_count, likes_count, shares_count } = request.body;
-    const user = request.user;
-
-    // 현재 영상 정보 조회
-    const video = db.prepare("SELECT * FROM videos WHERE id = ?").get(id);
-
-    if (!video) {
-      return reply.code(404).send({ error: "Video not found" });
-    }
-
-    // 변경 로그 기록
-    const logId = generateId();
-    db.prepare(
-      "INSERT INTO stats_adjustments (id, video_id, admin_id, old_views, new_views, old_likes, new_likes, old_shares, new_shares) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run(
-      logId,
-      id,
-      user.id,
-      video.views_count || 0,
-      views_count !== undefined ? views_count : video.views_count || 0,
-      video.likes_count || 0,
-      likes_count !== undefined ? likes_count : video.likes_count || 0,
-      video.shares_count || 0,
-      shares_count !== undefined ? shares_count : video.shares_count || 0
-    );
-
-    // Stats 업데이트
-    const updates = [];
-    const params = [];
-
-    if (views_count !== undefined) {
-      updates.push("views_count = ?");
-      params.push(views_count);
-    }
-
-    if (likes_count !== undefined) {
-      updates.push("likes_count = ?");
-      params.push(likes_count);
-    }
-
-    if (shares_count !== undefined) {
-      updates.push("shares_count = ?");
-      params.push(shares_count);
-    }
-
-    if (updates.length > 0) {
-      updates.push("stats_updated_at = datetime('now')");
-      updates.push("stats_updated_by = ?");
-      params.push(user.id);
-      params.push(id);
-
-      db.prepare(
-        `UPDATE videos SET ${updates.join(", ")} WHERE id = ?`
-      ).run(...params);
-    }
-
-    const updatedVideo = db.prepare("SELECT * FROM videos WHERE id = ?").get(id);
-    return updatedVideo;
-  }
-);
-
-// ==================== Creator 전용 엔드포인트 ====================
-
-// Creator - Videos 조회 (자기 것만)
-app.get(
-  "/videos",
-  { preHandler: [authenticate, requireCreator] },
-  async (request, reply) => {
-    const { site_id } = request.query;
-    const user = request.user;
-
-    // creator는 자기 site_id만 접근 가능
-    const targetSiteId = site_id || user.site_id;
-
-    if (targetSiteId !== user.site_id) {
-      return reply.code(403).send({ error: "Access denied to this site_id" });
-    }
-
-    const videos = db
-      .prepare(
-        "SELECT * FROM videos WHERE site_id = ? AND owner_id = ? ORDER BY created_at DESC"
-      )
-      .all(targetSiteId, user.id);
-
-    return { videos };
-  }
-);
-
-// Creator - 일괄 영상 생성
-app.post(
-  "/videos/batch",
-  { preHandler: [authenticate, requireCreator] },
-  async (request, reply) => {
-    const { videos: videosToAdd, site_id } = request.body;
-    const user = request.user;
-
-    if (!videosToAdd || !Array.isArray(videosToAdd) || videosToAdd.length === 0) {
-      return reply.code(400).send({ error: "videos array is required" });
-    }
-
-    if (videosToAdd.length > 20) {
-      return reply.code(400).send({ error: "Maximum 20 videos per batch" });
-    }
-
-    // Admin은 site_id 지정 가능, Creator는 자기 site_id 사용
-    let siteId;
-    if (user.role === "admin") {
-      siteId = site_id;
-      if (!siteId) {
-        return reply.code(400).send({ error: "Admin must provide site_id" });
-      }
-    } else {
-      siteId = user.site_id;
-      if (!siteId) {
-        return reply.code(400).send({ error: "Creator must have a site_id" });
-      }
-    }
-
-    const results = [];
-    const errors = [];
-
-    for (const videoData of videosToAdd) {
-      try {
-        const { platform, source_url, title, thumbnail_url, visibility = "public", language = "en", status = "active" } = videoData;
-
-        if (!platform || !source_url) {
-          errors.push({ source_url, error: "platform and source_url are required" });
-          continue;
-        }
-
-        // 메타정보 자동 보강
-        const metadata = await enrichMetadata(platform, source_url, title, thumbnail_url);
-
-        // video_id 추출
-        let extractedVideoId = null;
-        if (platform === "youtube") {
-          extractedVideoId = extractYouTubeVideoId(source_url);
-        } else if (platform === "facebook") {
-          const match = source_url.match(/\/videos\/(\d+)/);
-          extractedVideoId = match ? match[1] : null;
-        }
-
-        const videoId = generateId();
-        db.prepare(
-          "INSERT INTO videos (id, site_id, owner_id, platform, video_id, source_url, title, thumbnail_url, embed_url, language, status, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        ).run(
-          videoId,
-          siteId,
-          user.id,
-          platform,
-          extractedVideoId,
-          source_url,
-          metadata.title,
-          metadata.thumbnail_url,
-          metadata.embed_url,
-          language,
-          status,
-          visibility
-        );
-
-        const video = db.prepare("SELECT * FROM videos WHERE id = ?").get(videoId);
-        results.push(video);
-      } catch (err) {
-        errors.push({ source_url: videoData.source_url, error: err.message });
-      }
-    }
-
-    return {
-      success: true,
-      created: results.length,
-      errors: errors.length,
-      results,
-      error_details: errors,
-    };
-  }
-);
-
-// Creator - Video 생성 (Admin도 사용 가능)
-app.post(
-  "/videos",
-  { preHandler: [authenticate, requireCreator] },
-  async (request, reply) => {
-    const { platform, source_url, title, thumbnail_url, visibility = "public", language = "en", status = "active", site_id } = request.body;
-    const user = request.user;
-
-    if (!platform || !source_url) {
-      return reply.code(400).send({ error: "platform and source_url are required" });
-    }
-
-    // Admin은 site_id를 지정 가능, Creator는 자기 site_id로 강제
-    let siteId;
-    if (user.role === "admin") {
-      // Admin: body에서 site_id 받기 (없으면 에러)
-      siteId = site_id;
-      if (!siteId) {
-        return reply.code(400).send({ error: "Admin must provide site_id" });
-      }
-    } else {
-      // Creator: 자기 site_id 사용
-      siteId = user.site_id;
-      if (!siteId) {
-        return reply.code(400).send({ error: "Creator must have a site_id" });
-      }
-    }
-
-    // 메타정보 자동 보강
-    const metadata = await enrichMetadata(platform, source_url, title, thumbnail_url);
-
-    // video_id 추출
-    let extractedVideoId = null;
-    if (platform === "youtube") {
-      extractedVideoId = extractYouTubeVideoId(source_url);
-    } else if (platform === "facebook") {
-      const match = source_url.match(/\/videos\/(\d+)/);
-      extractedVideoId = match ? match[1] : null;
-    }
-
-    const videoId = generateId();
-    db.prepare(
-      "INSERT INTO videos (id, site_id, owner_id, platform, video_id, source_url, title, thumbnail_url, embed_url, language, status, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run(
-      videoId,
-      siteId,
-      user.id,
-      platform,
-      extractedVideoId,
-      source_url,
-      metadata.title,
-      metadata.thumbnail_url,
-      metadata.embed_url,
-      language,
-      status,
-      visibility
-    );
-
-    const video = db.prepare("SELECT * FROM videos WHERE id = ?").get(videoId);
-    return video;
-  }
-);
-
-// Creator - Video 수정
-app.patch(
-  "/videos/:id",
-  { preHandler: [authenticate, requireCreator] },
-  async (request, reply) => {
-    const { id } = request.params;
-    const { platform, source_url, title, thumbnail_url, visibility, language, status } = request.body;
-    const user = request.user;
-
-    // 본인 소유 확인
-    const existing = db
-      .prepare("SELECT * FROM videos WHERE id = ? AND owner_id = ?")
-      .get(id, user.id);
-
-    if (!existing) {
-      return reply.code(404).send({ error: "Video not found or access denied" });
-    }
-
-    const updates = [];
-    const params = [];
-
-    if (platform !== undefined) {
-      updates.push("platform = ?");
-      params.push(platform);
-    }
-
-    if (source_url !== undefined) {
-      updates.push("source_url = ?");
-      params.push(source_url);
-    }
-
-    if (title !== undefined) {
-      updates.push("title = ?");
-      params.push(title);
-    }
-
-    if (thumbnail_url !== undefined) {
-      updates.push("thumbnail_url = ?");
-      params.push(thumbnail_url);
-    }
-
-    if (visibility !== undefined) {
-      updates.push("visibility = ?");
-      params.push(visibility);
-    }
-
-    if (language !== undefined) {
-      updates.push("language = ?");
-      params.push(language);
-    }
-
-    if (status !== undefined) {
-      updates.push("status = ?");
-      params.push(status);
-    }
-
-    if (updates.length === 0) {
-      return reply.code(400).send({ error: "No fields to update" });
-    }
-
-    // source_url이나 platform이 변경되면 메타정보 및 video_id 재생성
-    if (source_url !== undefined || platform !== undefined) {
-      const finalPlatform = platform || existing.platform;
-      const finalSourceUrl = source_url || existing.source_url;
-      const finalTitle = title !== undefined ? title : existing.title;
-      const finalThumbnail = thumbnail_url !== undefined ? thumbnail_url : existing.thumbnail_url;
-
-      const metadata = await enrichMetadata(finalPlatform, finalSourceUrl, finalTitle, finalThumbnail);
-
-      if (metadata.title !== null) {
-        updates.push("title = ?");
-        params.push(metadata.title);
-      }
-
-      if (metadata.thumbnail_url !== null) {
-        updates.push("thumbnail_url = ?");
-        params.push(metadata.thumbnail_url);
-      }
-
-      if (metadata.embed_url !== null) {
-        updates.push("embed_url = ?");
-        params.push(metadata.embed_url);
-      }
-
-      // video_id 추출 및 업데이트
-      let extractedVideoId = null;
-      if (finalPlatform === "youtube") {
-        extractedVideoId = extractYouTubeVideoId(finalSourceUrl);
-      } else if (finalPlatform === "facebook") {
-        const match = finalSourceUrl.match(/\/videos\/(\d+)/);
-        extractedVideoId = match ? match[1] : null;
-      }
-
-      if (extractedVideoId) {
-        updates.push("video_id = ?");
-        params.push(extractedVideoId);
-      }
-    }
-
-    params.push(id);
-
-    db.prepare(
-      `UPDATE videos SET ${updates.join(", ")}, updated_at = datetime('now') WHERE id = ?`
-    ).run(...params);
-
-    const video = db.prepare("SELECT * FROM videos WHERE id = ?").get(id);
-    return video;
-  }
-);
-
-// Creator - Video 삭제
-app.delete(
-  "/videos/:id",
-  { preHandler: [authenticate, requireCreator] },
-  async (request, reply) => {
-    const { id } = request.params;
-    const user = request.user;
-
-    // 본인 소유 확인
-    const result = db
-      .prepare("DELETE FROM videos WHERE id = ? AND owner_id = ?")
-      .run(id, user.id);
-
-    if (result.changes === 0) {
-      return reply.code(404).send({ error: "Video not found or access denied" });
-    }
-
-    return { success: true };
-  }
-);
-
-// Creator - 일괄 삭제
-app.post(
-  "/videos/batch-delete",
-  { preHandler: [authenticate, requireCreator] },
-  async (request, reply) => {
-    const { video_ids } = request.body;
-    const user = request.user;
-
-    if (!video_ids || !Array.isArray(video_ids) || video_ids.length === 0) {
-      return reply.code(400).send({ error: "video_ids array is required" });
-    }
-
-    try {
-      let deletedCount = 0;
-
-      // Admin이면 모든 영상 삭제 가능, Creator는 본인 영상만
-      if (user.role === "admin") {
-        const placeholders = video_ids.map(() => "?").join(",");
-        const result = db.prepare(
-          `DELETE FROM videos WHERE id IN (${placeholders})`
-        ).run(...video_ids);
-        deletedCount = result.changes;
-      } else {
-        // Creator: 본인 영상만 삭제
-        for (const videoId of video_ids) {
-          const result = db
-            .prepare("DELETE FROM videos WHERE id = ? AND owner_id = ?")
-            .run(videoId, user.id);
-          deletedCount += result.changes;
-        }
-      }
-
-      return {
-        success: true,
-        deleted_count: deletedCount,
-      };
-    } catch (err) {
-      console.error("일괄 삭제 오류:", err);
-      return reply.code(500).send({ error: "Batch delete failed" });
-    }
-  }
-);
-
-// Creator - 플랫폼 키 조회
-app.get(
-  "/my/provider-keys",
-  { preHandler: [authenticate, requireCreator] },
-  async (request, reply) => {
-    const user = request.user;
-
-    const keys = db
-      .prepare("SELECT * FROM user_provider_keys WHERE user_id = ? ORDER BY created_at DESC")
-      .all(user.id);
-
-    return { keys };
-  }
-);
-
-// Creator - 플랫폼 키 저장/수정 (upsert)
-app.put(
-  "/my/provider-keys",
-  { preHandler: [authenticate, requireCreator] },
-  async (request, reply) => {
-    const { provider, key_name, key_value } = request.body;
-    const user = request.user;
-
-    if (!provider || !key_name || !key_value) {
-      return reply.code(400).send({ error: "provider, key_name, and key_value are required" });
-    }
-
-    // 기존 키 확인
-    const existing = db
-      .prepare(
-        "SELECT * FROM user_provider_keys WHERE user_id = ? AND provider = ? AND key_name = ?"
-      )
-      .get(user.id, provider, key_name);
-
-    if (existing) {
-      // 업데이트
-      db.prepare(
-        "UPDATE user_provider_keys SET key_value = ?, updated_at = datetime('now') WHERE id = ?"
-      ).run(key_value, existing.id);
-      const updated = db
-        .prepare("SELECT * FROM user_provider_keys WHERE id = ?")
-        .get(existing.id);
-      return updated;
-    } else {
-      // 생성
-      const keyId = generateId();
-      db.prepare(
-        "INSERT INTO user_provider_keys (id, user_id, provider, key_name, key_value) VALUES (?, ?, ?, ?, ?)"
-      ).run(keyId, user.id, provider, key_name, key_value);
-      const created = db.prepare("SELECT * FROM user_provider_keys WHERE id = ?").get(keyId);
-      return created;
-    }
-  }
-);
-
-// Creator - 플랫폼 키 삭제
-app.delete(
-  "/my/provider-keys/:id",
-  { preHandler: [authenticate, requireCreator] },
-  async (request, reply) => {
-    const { id } = request.params;
-    const user = request.user;
-
-    // 본인 소유 확인
-    const result = db
-      .prepare("DELETE FROM user_provider_keys WHERE id = ? AND user_id = ?")
-      .run(id, user.id);
-
-    if (result.changes === 0) {
-      return reply.code(404).send({ error: "Key not found or access denied" });
-    }
-
-    return { success: true };
-  }
-);
-
-// 서버 시작
-const PORT = process.env.PORT || 8787;
-app.listen({ port: PORT, host: "0.0.0.0" }, (err, address) => {
-  if (err) {
-    app.log.error(err);
-    process.exit(1);
-  }
-  console.log(`✅ CMS API Server running on ${address}`);
-  console.log(`📊 Admin UI: http://localhost:${PORT}/admin`);
-  console.log(`🎨 Creator UI: http://localhost:${PORT}/creator`);
-});
-
