@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CMS 영상 갤러리 - 데모</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    
+    h1 {
+      color: white;
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 42px;
+      text-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      font-weight: 700;
+    }
+    
+    .subtitle {
+      color: rgba(255,255,255,0.9);
+      text-align: center;
+      margin-bottom: 40px;
+      font-size: 18px;
+    }
+    
+    .controls {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 30px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    
+    .controls select, .controls button {
+      padding: 10px 20px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    
+    .controls button {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    
+    .controls button:hover {
+      transform: translateY(-2px);
+    }
+    
+    .video-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 30px;
+    }
+    
+    .video-card {
+      background: white;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+      transition: transform 0.3s, box-shadow 0.3s;
+      cursor: pointer;
+    }
+    
+    .video-card:hover {
+      transform: translateY(-10px);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+    }
+    
+    .video-thumbnail-container {
+      position: relative;
+      width: 100%;
+      height: 220px;
+      overflow: hidden;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+    }
+    
+    .video-thumbnail {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.3s;
+    }
+    
+    .video-card:hover .video-thumbnail {
+      transform: scale(1.1);
+    }
+    
+    .no-thumbnail {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 64px;
+      color: white;
+    }
+    
+    .play-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 70px;
+      height: 70px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    
+    .video-card:hover .play-overlay {
+      opacity: 1;
+    }
+    
+    .play-icon {
+      width: 0;
+      height: 0;
+      border-left: 20px solid white;
+      border-top: 12px solid transparent;
+      border-bottom: 12px solid transparent;
+      margin-left: 5px;
+    }
+    
+    .video-info {
+      padding: 20px;
+    }
+    
+    .video-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: #1a202c;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    
+    .video-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #e2e8f0;
+    }
+    
+    .video-owner {
+      font-size: 14px;
+      color: #718096;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .video-platform {
+      padding: 6px 12px;
+      border-radius: 16px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .platform-youtube {
+      background: #ff0000;
+      color: white;
+    }
+    
+    .platform-facebook {
+      background: #1877f2;
+      color: white;
+    }
+    
+    .platform-other {
+      background: #718096;
+      color: white;
+    }
+    
+    .video-player-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.95);
+      z-index: 1000;
+      padding: 20px;
+      animation: fadeIn 0.3s;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    .player-container {
+      position: relative;
+      width: 100%;
+      max-width: 1000px;
+      margin: 50px auto;
+      animation: slideUp 0.3s ease-out;
+    }
+    
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(50px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .close-button {
+      position: absolute;
+      top: -60px;
+      right: 0;
+      background: white;
+      border: none;
+      padding: 14px 28px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 16px;
+      transition: all 0.2s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    
+    .close-button:hover {
+      background: #f56565;
+      color: white;
+      transform: translateY(-2px);
+    }
+    
+    .video-iframe {
+      width: 100%;
+      height: 650px;
+      border: none;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      background: white;
+    }
+    
+    .loading {
+      text-align: center;
+      color: white;
+      font-size: 24px;
+      padding: 100px;
+    }
+    
+    .error-message {
+      background: white;
+      color: #742a2a;
+      padding: 30px;
+      border-radius: 16px;
+      text-align: center;
+      margin: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+    
+    .stats {
+      background: rgba(255,255,255,0.2);
+      backdrop-filter: blur(10px);
+      color: white;
+      padding: 15px 30px;
+      border-radius: 12px;
+      margin-bottom: 30px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    
+    .empty-state {
+      background: white;
+      padding: 60px;
+      border-radius: 16px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+    
+    .empty-state-icon {
+      font-size: 80px;
+      margin-bottom: 20px;
+    }
+    
+    .empty-state-text {
+      font-size: 20px;
+      color: #718096;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎬 CMS 영상 갤러리</h1>
+    <div class="subtitle">API를 통해 자동으로 불러온 영상들</div>
+    
+    <div class="controls">
+      <label style="font-weight: 600; color: #2d3748;">플랫폼 필터:</label>
+      <select id="platformFilter" onchange="loadVideos()">
+        <option value="">전체</option>
+        <option value="youtube">YouTube</option>
+        <option value="facebook">Facebook</option>
+        <option value="other">기타</option>
+      </select>
+      
+      <label style="font-weight: 600; color: #2d3748;">개수:</label>
+      <select id="limitSelect" onchange="loadVideos()">
+        <option value="10">10개</option>
+        <option value="20" selected>20개</option>
+        <option value="50">50개</option>
+        <option value="100">100개</option>
+      </select>
+      
+      <button onclick="loadVideos()">🔄 새로고침</button>
+    </div>
+    
+    <div id="stats" class="stats" style="display: none;"></div>
+    
+    <div id="videos" class="video-grid">
+      <div class="loading">영상을 불러오는 중...</div>
+    </div>
+  </div>
+
+  <!-- 영상 플레이어 모달 -->
+  <div id="playerModal" class="video-player-modal" onclick="closePlayerOnBackground(event)">
+    <div class="player-container">
+      <button class="close-button" onclick="closePlayer()">✕ 닫기</button>
+      <div id="playerTitle" style="color: white; font-size: 24px; font-weight: 600; margin-bottom: 20px; text-align: center;"></div>
+      <iframe id="videoPlayer" class="video-iframe" allowfullscreen allow="autoplay; encrypted-media"></iframe>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:8787';
+    const SITE_ID = 'gods';
+
+    async function loadVideos() {
+      try {
+        const platform = document.getElementById('platformFilter').value;
+        const limit = document.getElementById('limitSelect').value;
+        
+        let url = `${API_BASE}/public/videos?site_id=${SITE_ID}&limit=${limit}`;
+        if (platform) {
+          url += `&platform=${platform}`;
+        }
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        const container = document.getElementById('videos');
+        const stats = document.getElementById('stats');
+        
+        if (data.videos.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">📭</div>
+              <div class="empty-state-text">등록된 영상이 없습니다</div>
+            </div>
+          `;
+          stats.style.display = 'none';
+          return;
+        }
+        
+        // 통계 표시
+        const youtubeCount = data.videos.filter(v => v.platform === 'youtube').length;
+        const facebookCount = data.videos.filter(v => v.platform === 'facebook').length;
+        stats.innerHTML = `📊 총 ${data.videos.length}개 영상 (YouTube: ${youtubeCount}, Facebook: ${facebookCount})`;
+        stats.style.display = 'block';
+        
+        container.innerHTML = '';
+        
+        data.videos.forEach(video => {
+          const card = document.createElement('div');
+          card.className = 'video-card';
+          card.onclick = () => playVideo(video.embed_url, video.title, video.source_url);
+          
+          let content = '';
+          
+          // 썸네일 컨테이너
+          content += '<div class="video-thumbnail-container">';
+          
+          if (video.thumbnail_url) {
+            content += `
+              <img 
+                src="${video.thumbnail_url}" 
+                alt="${video.title || 'Video'}" 
+                class="video-thumbnail"
+                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+              >
+              <div class="no-thumbnail" style="display:none;">
+                ${video.platform === 'youtube' ? '▶️' : '📘'}
+              </div>
+            `;
+          } else {
+            content += `
+              <div class="no-thumbnail">
+                ${video.platform === 'youtube' ? '▶️' : '📘'}
+              </div>
+            `;
+          }
+          
+          content += '<div class="play-overlay"><div class="play-icon"></div></div>';
+          content += '</div>';
+          
+          // 영상 정보
+          content += `
+            <div class="video-info">
+              <div class="video-title">${escapeHtml(video.title || 'Untitled Video')}</div>
+              <div class="video-meta">
+                <div class="video-owner">👤 ${escapeHtml(video.owner_name || 'Unknown')}</div>
+                <div class="video-platform platform-${video.platform}">
+                  ${video.platform}
+                </div>
+              </div>
+            </div>
+          `;
+          
+          card.innerHTML = content;
+          container.appendChild(card);
+        });
+      } catch (err) {
+        console.error('Failed to load videos:', err);
+        document.getElementById('videos').innerHTML = 
+          '<div class="error-message">❌ 영상을 불러오는데 실패했습니다.<br>서버가 실행 중인지 확인하세요.</div>';
+      }
+    }
+    
+    function playVideo(embedUrl, title, sourceUrl) {
+      if (!embedUrl) {
+        alert('재생 가능한 URL이 없습니다.\n원본 URL: ' + sourceUrl);
+        return;
+      }
+      
+      const player = document.getElementById('videoPlayer');
+      const titleEl = document.getElementById('playerTitle');
+      
+      player.src = embedUrl;
+      titleEl.textContent = title || 'Video';
+      document.getElementById('playerModal').style.display = 'block';
+      document.body.style.overflow = 'hidden';
+    }
+    
+    function closePlayer() {
+      document.getElementById('playerModal').style.display = 'none';
+      document.getElementById('videoPlayer').src = '';
+      document.body.style.overflow = 'auto';
+    }
+    
+    function closePlayerOnBackground(e) {
+      if (e.target.id === 'playerModal') {
+        closePlayer();
+      }
+    }
+    
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+    
+    // ESC 키로 닫기
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        closePlayer();
+      }
+    });
+    
+    // 페이지 로드 시 영상 불러오기
+    loadVideos();
+  </script>
+</body>
+</html>

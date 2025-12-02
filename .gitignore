@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Environment variables (중요!)
+.env
+.env.local
+.env.production
+
+# Database (SQLite - Railway에서 새로 생성됨)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Test files
+test-*.js
+

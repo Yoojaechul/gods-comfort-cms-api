@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>테스트</title>
+</head>
+<body>
+  <h1>JavaScript 테스트</h1>
+  <button onclick="testClick()">클릭 테스트</button>
+  <div id="result"></div>
+
+  <script>
+    function testClick() {
+      document.getElementById('result').innerHTML = '✅ JavaScript 정상 작동!';
+      alert('버튼 클릭 성공!');
+    }
+    console.log('JavaScript 로드 완료');
+  </script>
+</body>
+</html>
+
