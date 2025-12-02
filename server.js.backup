@@ -1,4 +1,4 @@
-﻿import Fastify from "fastify";
+import Fastify from "fastify";
 import cors from "@fastify/cors";
 import fastifyJwt from "@fastify/jwt";
 import staticFiles from "@fastify/static";
@@ -1359,3 +1359,693 @@ app.listen({ port: PORT, host: "0.0.0.0" }, (err, address) => {
   console.log(`📊 Admin UI: http://localhost:${PORT}/admin`);
   console.log(`🎨 Creator UI: http://localhost:${PORT}/creator`);
 });
+
+
+    const { site_id, limit = 50, cursor } = request.query;
+
+    let query =
+      "SELECT v.*, u.name as owner_name FROM videos v LEFT JOIN users u ON v.owner_id = u.id WHERE 1=1";
+    const params = [];
+
+    if (site_id) {
+      query += " AND v.site_id = ?";
+      params.push(site_id);
+    }
+
+    if (cursor) {
+      query += " AND v.created_at < ?";
+      params.push(cursor);
+    }
+
+    query += " ORDER BY v.created_at DESC LIMIT ?";
+    params.push(parseInt(limit));
+
+    const videos = db.prepare(query).all(...params);
+
+    return {
+      videos,
+      cursor: videos.length > 0 ? videos[videos.length - 1].created_at : null,
+    };
+  }
+);
+
+// Admin - Video 삭제
+app.delete(
+  "/admin/videos/:id",
+  { preHandler: [authenticate, requireAdmin] },
+  async (request, reply) => {
+    const { id } = request.params;
+
+    const result = db.prepare("DELETE FROM videos WHERE id = ?").run(id);
+
+    if (result.changes === 0) {
+      return reply.code(404).send({ error: "Video not found" });
+    }
+
+    return { success: true };
+  }
+);
+
+// Admin - 일괄 삭제
+app.post(
+  "/admin/videos/batch-delete",
+  { preHandler: [authenticate, requireAdmin] },
+  async (request, reply) => {
+    const { video_ids } = request.body;
+
+    if (!video_ids || !Array.isArray(video_ids) || video_ids.length === 0) {
+      return reply.code(400).send({ error: "video_ids array is required" });
+    }
+
+    try {
+      const placeholders = video_ids.map(() => "?").join(",");
+      const result = db.prepare(
+        `DELETE FROM videos WHERE id IN (${placeholders})`
+      ).run(...video_ids);
+
+      return {
+        success: true,
+        deleted_count: result.changes,
+      };
+    } catch (err) {
+      console.error("일괄 삭제 오류:", err);
+      return reply.code(500).send({ error: "Batch delete failed" });
+    }
+  }
+);
+
+// Admin - Video 수정 (모든 필드)
+app.patch(
+  "/admin/videos/:id",
+  { preHandler: [authenticate, requireAdmin] },
+  async (request, reply) => {
+    const { id } = request.params;
+    const { platform, source_url, title, thumbnail_url, visibility, language, status } = request.body;
+
+    // 영상 존재 확인
+    const existing = db.prepare("SELECT * FROM videos WHERE id = ?").get(id);
+
+    if (!existing) {
+      return reply.code(404).send({ error: "Video not found" });
+    }
+
+    const updates = [];
+    const params = [];
+
+    if (platform !== undefined) {
+      updates.push("platform = ?");
+      params.push(platform);
+    }
+
+    if (source_url !== undefined) {
+      updates.push("source_url = ?");
+      params.push(source_url);
+    }
+
+    if (title !== undefined) {
+      updates.push("title = ?");
+      params.push(title);
+    }
+
+    if (thumbnail_url !== undefined) {
+      updates.push("thumbnail_url = ?");
+      params.push(thumbnail_url);
+    }
+
+    if (visibility !== undefined) {
+      updates.push("visibility = ?");
+      params.push(visibility);
+    }
+
+    if (language !== undefined) {
+      updates.push("language = ?");
+      params.push(language);
+    }
+
+    if (status !== undefined) {
+      updates.push("status = ?");
+      params.push(status);
+    }
+
+    if (updates.length === 0) {
+      return reply.code(400).send({ error: "No fields to update" });
+    }
+
+    // source_url이나 platform이 변경되면 메타정보 및 video_id 재생성
+    if (source_url !== undefined || platform !== undefined) {
+      const finalPlatform = platform || existing.platform;
+      const finalSourceUrl = source_url || existing.source_url;
+      const finalTitle = title !== undefined ? title : existing.title;
+      const finalThumbnail = thumbnail_url !== undefined ? thumbnail_url : existing.thumbnail_url;
+
+      const metadata = await enrichMetadata(finalPlatform, finalSourceUrl, finalTitle, finalThumbnail);
+
+      if (metadata.title !== null && title === undefined) {
+        updates.push("title = ?");
+        params.push(metadata.title);
+      }
+
+      if (metadata.thumbnail_url !== null && thumbnail_url === undefined) {
+        updates.push("thumbnail_url = ?");
+        params.push(metadata.thumbnail_url);
+      }
+
+      if (metadata.embed_url !== null) {
+        updates.push("embed_url = ?");
+        params.push(metadata.embed_url);
+      }
+
+      // video_id 추출 및 업데이트
+      let extractedVideoId = null;
+      if (finalPlatform === "youtube") {
+        extractedVideoId = extractYouTubeVideoId(finalSourceUrl);
+      } else if (finalPlatform === "facebook") {
+        const match = finalSourceUrl.match(/\/videos\/(\d+)/);
+        extractedVideoId = match ? match[1] : null;
+      }
+
+      if (extractedVideoId) {
+        updates.push("video_id = ?");
+        params.push(extractedVideoId);
+      }
+    }
+
+    params.push(id);
+
+    db.prepare(
+      `UPDATE videos SET ${updates.join(", ")}, updated_at = datetime('now') WHERE id = ?`
+    ).run(...params);
+
+    const video = db.prepare("SELECT * FROM videos WHERE id = ?").get(id);
+    return video;
+  }
+);
+
+// Admin - Video Stats 수정
+app.patch(
+  "/admin/videos/:id/stats",
+  { preHandler: [authenticate, requireAdmin] },
+  async (request, reply) => {
+    const { id } = request.params;
+    const { views_count, likes_count, shares_count } = request.body;
+    const user = request.user;
+
+    // 현재 영상 정보 조회
+    const video = db.prepare("SELECT * FROM videos WHERE id = ?").get(id);
+
+    if (!video) {
+      return reply.code(404).send({ error: "Video not found" });
+    }
+
+    // 변경 로그 기록
+    const logId = generateId();
+    db.prepare(
+      "INSERT INTO stats_adjustments (id, video_id, admin_id, old_views, new_views, old_likes, new_likes, old_shares, new_shares) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run(
+      logId,
+      id,
+      user.id,
+      video.views_count || 0,
+      views_count !== undefined ? views_count : video.views_count || 0,
+      video.likes_count || 0,
+      likes_count !== undefined ? likes_count : video.likes_count || 0,
+      video.shares_count || 0,
+      shares_count !== undefined ? shares_count : video.shares_count || 0
+    );
+
+    // Stats 업데이트
+    const updates = [];
+    const params = [];
+
+    if (views_count !== undefined) {
+      updates.push("views_count = ?");
+      params.push(views_count);
+    }
+
+    if (likes_count !== undefined) {
+      updates.push("likes_count = ?");
+      params.push(likes_count);
+    }
+
+    if (shares_count !== undefined) {
+      updates.push("shares_count = ?");
+      params.push(shares_count);
+    }
+
+    if (updates.length > 0) {
+      updates.push("stats_updated_at = datetime('now')");
+      updates.push("stats_updated_by = ?");
+      params.push(user.id);
+      params.push(id);
+
+      db.prepare(
+        `UPDATE videos SET ${updates.join(", ")} WHERE id = ?`
+      ).run(...params);
+    }
+
+    const updatedVideo = db.prepare("SELECT * FROM videos WHERE id = ?").get(id);
+    return updatedVideo;
+  }
+);
+
+// ==================== Creator 전용 엔드포인트 ====================
+
+// Creator - Videos 조회 (자기 것만)
+app.get(
+  "/videos",
+  { preHandler: [authenticate, requireCreator] },
+  async (request, reply) => {
+    const { site_id } = request.query;
+    const user = request.user;
+
+    // creator는 자기 site_id만 접근 가능
+    const targetSiteId = site_id || user.site_id;
+
+    if (targetSiteId !== user.site_id) {
+      return reply.code(403).send({ error: "Access denied to this site_id" });
+    }
+
+    const videos = db
+      .prepare(
+        "SELECT * FROM videos WHERE site_id = ? AND owner_id = ? ORDER BY created_at DESC"
+      )
+      .all(targetSiteId, user.id);
+
+    return { videos };
+  }
+);
+
+// Creator - 일괄 영상 생성
+app.post(
+  "/videos/batch",
+  { preHandler: [authenticate, requireCreator] },
+  async (request, reply) => {
+    const { videos: videosToAdd, site_id } = request.body;
+    const user = request.user;
+
+    if (!videosToAdd || !Array.isArray(videosToAdd) || videosToAdd.length === 0) {
+      return reply.code(400).send({ error: "videos array is required" });
+    }
+
+    if (videosToAdd.length > 20) {
+      return reply.code(400).send({ error: "Maximum 20 videos per batch" });
+    }
+
+    // Admin은 site_id 지정 가능, Creator는 자기 site_id 사용
+    let siteId;
+    if (user.role === "admin") {
+      siteId = site_id;
+      if (!siteId) {
+        return reply.code(400).send({ error: "Admin must provide site_id" });
+      }
+    } else {
+      siteId = user.site_id;
+      if (!siteId) {
+        return reply.code(400).send({ error: "Creator must have a site_id" });
+      }
+    }
+
+    const results = [];
+    const errors = [];
+
+    for (const videoData of videosToAdd) {
+      try {
+        const { platform, source_url, title, thumbnail_url, visibility = "public", language = "en", status = "active" } = videoData;
+
+        if (!platform || !source_url) {
+          errors.push({ source_url, error: "platform and source_url are required" });
+          continue;
+        }
+
+        // 메타정보 자동 보강
+        const metadata = await enrichMetadata(platform, source_url, title, thumbnail_url);
+
+        // video_id 추출
+        let extractedVideoId = null;
+        if (platform === "youtube") {
+          extractedVideoId = extractYouTubeVideoId(source_url);
+        } else if (platform === "facebook") {
+          const match = source_url.match(/\/videos\/(\d+)/);
+          extractedVideoId = match ? match[1] : null;
+        }
+
+        const videoId = generateId();
+        db.prepare(
+          "INSERT INTO videos (id, site_id, owner_id, platform, video_id, source_url, title, thumbnail_url, embed_url, language, status, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        ).run(
+          videoId,
+          siteId,
+          user.id,
+          platform,
+          extractedVideoId,
+          source_url,
+          metadata.title,
+          metadata.thumbnail_url,
+          metadata.embed_url,
+          language,
+          status,
+          visibility
+        );
+
+        const video = db.prepare("SELECT * FROM videos WHERE id = ?").get(videoId);
+        results.push(video);
+      } catch (err) {
+        errors.push({ source_url: videoData.source_url, error: err.message });
+      }
+    }
+
+    return {
+      success: true,
+      created: results.length,
+      errors: errors.length,
+      results,
+      error_details: errors,
+    };
+  }
+);
+
+// Creator - Video 생성 (Admin도 사용 가능)
+app.post(
+  "/videos",
+  { preHandler: [authenticate, requireCreator] },
+  async (request, reply) => {
+    const { platform, source_url, title, thumbnail_url, visibility = "public", language = "en", status = "active", site_id } = request.body;
+    const user = request.user;
+
+    if (!platform || !source_url) {
+      return reply.code(400).send({ error: "platform and source_url are required" });
+    }
+
+    // Admin은 site_id를 지정 가능, Creator는 자기 site_id로 강제
+    let siteId;
+    if (user.role === "admin") {
+      // Admin: body에서 site_id 받기 (없으면 에러)
+      siteId = site_id;
+      if (!siteId) {
+        return reply.code(400).send({ error: "Admin must provide site_id" });
+      }
+    } else {
+      // Creator: 자기 site_id 사용
+      siteId = user.site_id;
+      if (!siteId) {
+        return reply.code(400).send({ error: "Creator must have a site_id" });
+      }
+    }
+
+    // 메타정보 자동 보강
+    const metadata = await enrichMetadata(platform, source_url, title, thumbnail_url);
+
+    // video_id 추출
+    let extractedVideoId = null;
+    if (platform === "youtube") {
+      extractedVideoId = extractYouTubeVideoId(source_url);
+    } else if (platform === "facebook") {
+      const match = source_url.match(/\/videos\/(\d+)/);
+      extractedVideoId = match ? match[1] : null;
+    }
+
+    const videoId = generateId();
+    db.prepare(
+      "INSERT INTO videos (id, site_id, owner_id, platform, video_id, source_url, title, thumbnail_url, embed_url, language, status, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run(
+      videoId,
+      siteId,
+      user.id,
+      platform,
+      extractedVideoId,
+      source_url,
+      metadata.title,
+      metadata.thumbnail_url,
+      metadata.embed_url,
+      language,
+      status,
+      visibility
+    );
+
+    const video = db.prepare("SELECT * FROM videos WHERE id = ?").get(videoId);
+    return video;
+  }
+);
+
+// Creator - Video 수정
+app.patch(
+  "/videos/:id",
+  { preHandler: [authenticate, requireCreator] },
+  async (request, reply) => {
+    const { id } = request.params;
+    const { platform, source_url, title, thumbnail_url, visibility, language, status } = request.body;
+    const user = request.user;
+
+    // 본인 소유 확인
+    const existing = db
+      .prepare("SELECT * FROM videos WHERE id = ? AND owner_id = ?")
+      .get(id, user.id);
+
+    if (!existing) {
+      return reply.code(404).send({ error: "Video not found or access denied" });
+    }
+
+    const updates = [];
+    const params = [];
+
+    if (platform !== undefined) {
+      updates.push("platform = ?");
+      params.push(platform);
+    }
+
+    if (source_url !== undefined) {
+      updates.push("source_url = ?");
+      params.push(source_url);
+    }
+
+    if (title !== undefined) {
+      updates.push("title = ?");
+      params.push(title);
+    }
+
+    if (thumbnail_url !== undefined) {
+      updates.push("thumbnail_url = ?");
+      params.push(thumbnail_url);
+    }
+
+    if (visibility !== undefined) {
+      updates.push("visibility = ?");
+      params.push(visibility);
+    }
+
+    if (language !== undefined) {
+      updates.push("language = ?");
+      params.push(language);
+    }
+
+    if (status !== undefined) {
+      updates.push("status = ?");
+      params.push(status);
+    }
+
+    if (updates.length === 0) {
+      return reply.code(400).send({ error: "No fields to update" });
+    }
+
+    // source_url이나 platform이 변경되면 메타정보 및 video_id 재생성
+    if (source_url !== undefined || platform !== undefined) {
+      const finalPlatform = platform || existing.platform;
+      const finalSourceUrl = source_url || existing.source_url;
+      const finalTitle = title !== undefined ? title : existing.title;
+      const finalThumbnail = thumbnail_url !== undefined ? thumbnail_url : existing.thumbnail_url;
+
+      const metadata = await enrichMetadata(finalPlatform, finalSourceUrl, finalTitle, finalThumbnail);
+
+      if (metadata.title !== null) {
+        updates.push("title = ?");
+        params.push(metadata.title);
+      }
+
+      if (metadata.thumbnail_url !== null) {
+        updates.push("thumbnail_url = ?");
+        params.push(metadata.thumbnail_url);
+      }
+
+      if (metadata.embed_url !== null) {
+        updates.push("embed_url = ?");
+        params.push(metadata.embed_url);
+      }
+
+      // video_id 추출 및 업데이트
+      let extractedVideoId = null;
+      if (finalPlatform === "youtube") {
+        extractedVideoId = extractYouTubeVideoId(finalSourceUrl);
+      } else if (finalPlatform === "facebook") {
+        const match = finalSourceUrl.match(/\/videos\/(\d+)/);
+        extractedVideoId = match ? match[1] : null;
+      }
+
+      if (extractedVideoId) {
+        updates.push("video_id = ?");
+        params.push(extractedVideoId);
+      }
+    }
+
+    params.push(id);
+
+    db.prepare(
+      `UPDATE videos SET ${updates.join(", ")}, updated_at = datetime('now') WHERE id = ?`
+    ).run(...params);
+
+    const video = db.prepare("SELECT * FROM videos WHERE id = ?").get(id);
+    return video;
+  }
+);
+
+// Creator - Video 삭제
+app.delete(
+  "/videos/:id",
+  { preHandler: [authenticate, requireCreator] },
+  async (request, reply) => {
+    const { id } = request.params;
+    const user = request.user;
+
+    // 본인 소유 확인
+    const result = db
+      .prepare("DELETE FROM videos WHERE id = ? AND owner_id = ?")
+      .run(id, user.id);
+
+    if (result.changes === 0) {
+      return reply.code(404).send({ error: "Video not found or access denied" });
+    }
+
+    return { success: true };
+  }
+);
+
+// Creator - 일괄 삭제
+app.post(
+  "/videos/batch-delete",
+  { preHandler: [authenticate, requireCreator] },
+  async (request, reply) => {
+    const { video_ids } = request.body;
+    const user = request.user;
+
+    if (!video_ids || !Array.isArray(video_ids) || video_ids.length === 0) {
+      return reply.code(400).send({ error: "video_ids array is required" });
+    }
+
+    try {
+      let deletedCount = 0;
+
+      // Admin이면 모든 영상 삭제 가능, Creator는 본인 영상만
+      if (user.role === "admin") {
+        const placeholders = video_ids.map(() => "?").join(",");
+        const result = db.prepare(
+          `DELETE FROM videos WHERE id IN (${placeholders})`
+        ).run(...video_ids);
+        deletedCount = result.changes;
+      } else {
+        // Creator: 본인 영상만 삭제
+        for (const videoId of video_ids) {
+          const result = db
+            .prepare("DELETE FROM videos WHERE id = ? AND owner_id = ?")
+            .run(videoId, user.id);
+          deletedCount += result.changes;
+        }
+      }
+
+      return {
+        success: true,
+        deleted_count: deletedCount,
+      };
+    } catch (err) {
+      console.error("일괄 삭제 오류:", err);
+      return reply.code(500).send({ error: "Batch delete failed" });
+    }
+  }
+);
+
+// Creator - 플랫폼 키 조회
+app.get(
+  "/my/provider-keys",
+  { preHandler: [authenticate, requireCreator] },
+  async (request, reply) => {
+    const user = request.user;
+
+    const keys = db
+      .prepare("SELECT * FROM user_provider_keys WHERE user_id = ? ORDER BY created_at DESC")
+      .all(user.id);
+
+    return { keys };
+  }
+);
+
+// Creator - 플랫폼 키 저장/수정 (upsert)
+app.put(
+  "/my/provider-keys",
+  { preHandler: [authenticate, requireCreator] },
+  async (request, reply) => {
+    const { provider, key_name, key_value } = request.body;
+    const user = request.user;
+
+    if (!provider || !key_name || !key_value) {
+      return reply.code(400).send({ error: "provider, key_name, and key_value are required" });
+    }
+
+    // 기존 키 확인
+    const existing = db
+      .prepare(
+        "SELECT * FROM user_provider_keys WHERE user_id = ? AND provider = ? AND key_name = ?"
+      )
+      .get(user.id, provider, key_name);
+
+    if (existing) {
+      // 업데이트
+      db.prepare(
+        "UPDATE user_provider_keys SET key_value = ?, updated_at = datetime('now') WHERE id = ?"
+      ).run(key_value, existing.id);
+      const updated = db
+        .prepare("SELECT * FROM user_provider_keys WHERE id = ?")
+        .get(existing.id);
+      return updated;
+    } else {
+      // 생성
+      const keyId = generateId();
+      db.prepare(
+        "INSERT INTO user_provider_keys (id, user_id, provider, key_name, key_value) VALUES (?, ?, ?, ?, ?)"
+      ).run(keyId, user.id, provider, key_name, key_value);
+      const created = db.prepare("SELECT * FROM user_provider_keys WHERE id = ?").get(keyId);
+      return created;
+    }
+  }
+);
+
+// Creator - 플랫폼 키 삭제
+app.delete(
+  "/my/provider-keys/:id",
+  { preHandler: [authenticate, requireCreator] },
+  async (request, reply) => {
+    const { id } = request.params;
+    const user = request.user;
+
+    // 본인 소유 확인
+    const result = db
+      .prepare("DELETE FROM user_provider_keys WHERE id = ? AND user_id = ?")
+      .run(id, user.id);
+
+    if (result.changes === 0) {
+      return reply.code(404).send({ error: "Key not found or access denied" });
+    }
+
+    return { success: true };
+  }
+);
+
+// 서버 시작
+const PORT = process.env.PORT || 8787;
+app.listen({ port: PORT, host: "0.0.0.0" }, (err, address) => {
+  if (err) {
+    app.log.error(err);
+    process.exit(1);
+  }
+  console.log(`✅ CMS API Server running on ${address}`);
+  console.log(`📊 Admin UI: http://localhost:${PORT}/admin`);
+  console.log(`🎨 Creator UI: http://localhost:${PORT}/creator`);
+});
+
