@@ -27,9 +27,12 @@ const isDevelopment = process.env.NODE_ENV !== 'production';
 
 await app.register(cors, {
   origin: (origin, cb) => {
-    const allowedOrigins = process.env.CORS_ORIGINS
+    // 환경 변수 + 기본값 병합
+    const envOrigins = process.env.CORS_ORIGINS
       ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim())
-      : ["http://localhost:3000", "https://gods-comfort-word.web.app", "https://godcomfortword.com", "https://www.godcomfortword.com"]; // 기본값 설정
+      : [];
+    const defaultOrigins = ["http://localhost:3000", "https://gods-comfort-word.web.app", "https://godcomfortword.com", "https://www.godcomfortword.com", "https://gods-comfort-word.firebaseapp.com"];
+    const allowedOrigins = [...new Set([...envOrigins, ...defaultOrigins])];
 
     // 개발 환경에서만 상세 로그
     if (isDevelopment) {
