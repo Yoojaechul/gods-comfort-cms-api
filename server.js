@@ -71,19 +71,44 @@ await app.register(staticFiles, {
 // DB 초기화
 initDB();
 
-// Admin 자동 생성 (부트스트랩 키로) - 개발 환경에서만
+// Admin 자동 생성 (부트스트랩 키로) - 모든 환경에서
 const bootstrapKey = process.env.ADMIN_BOOTSTRAP_KEY || "change_this";
 const existingAdmin = db.prepare("SELECT * FROM users WHERE role = 'admin'").get();
-if (!existingAdmin && isDevelopment) {
+if (!existingAdmin) {
   const adminId = generateId();
   const adminApiKey = generateApiKey();
   const { hash, salt } = hashApiKey(adminApiKey);
+  
+  // gods 사이트 확인/생성
+  const existingSite = db.prepare("SELECT * FROM sites WHERE id = ?").get("gods");
+  if (!existingSite) {
+    db.prepare("INSERT INTO sites (id, name) VALUES (?, ?)").run("gods", "God's Comfort Word");
+    console.log("✅ 사이트 'gods' 자동 생성");
+  }
+  
   db.prepare(
-    "INSERT INTO users (id, name, role, status, api_key_hash, api_key_salt) VALUES (?, ?, ?, ?, ?, ?)"
-  ).run(adminId, "Admin", "admin", "active", hash, salt);
+    "INSERT INTO users (id, name, email, role, status, api_key_hash, api_key_salt) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).run(adminId, "Manager", "consulting_manager@naver.com", "admin", "active", hash, salt);
+  
   console.log("=".repeat(60));
-  console.log("✅ Admin 자동 생성 완료! (개발 환경)");
+  console.log("✅ Admin 자동 생성 완료!");
+  console.log("이메일: consulting_manager@naver.com");
+  console.log("비밀번호: (최초 로그인 시 설정)");
   console.log("⚠️  API Key는 별도로 안전하게 관리하세요!");
+  console.log("=".repeat(60));
+  
+  // 크리에이터 계정도 생성
+  const creatorId = generateId();
+  const creatorApiKey = generateApiKey();
+  const { hash: creatorHash, salt: creatorSalt } = hashApiKey(creatorApiKey);
+  
+  db.prepare(
+    "INSERT INTO users (id, site_id, name, email, role, status, api_key_hash, api_key_salt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(creatorId, "gods", "Creator", "01023942042", "creator", "active", creatorHash, creatorSalt);
+  
+  console.log("✅ Creator 자동 생성 완료!");
+  console.log("초기 ID: 01023942042");
+  console.log("비밀번호: (최초 로그인 시 설정)");
   console.log("=".repeat(60));
 }
 
