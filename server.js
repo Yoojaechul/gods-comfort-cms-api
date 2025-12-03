@@ -29,7 +29,7 @@ await app.register(cors, {
   origin: (origin, cb) => {
     const allowedOrigins = process.env.CORS_ORIGINS
       ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim())
-      : ["http://localhost:3000"]; // 기본값 설정
+      : ["http://localhost:3000", "https://gods-comfort-word.web.app", "https://godcomfortword.com", "https://www.godcomfortword.com"]; // 기본값 설정
 
     // 개발 환경에서만 상세 로그
     if (isDevelopment) {
