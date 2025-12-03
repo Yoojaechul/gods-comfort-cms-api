@@ -68,6 +68,22 @@ export function initDB() {
     )
   `);
 
+  // visits 테이블 (방문자 로깅)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS visits (
+      id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL,
+      ip_address TEXT NOT NULL,
+      country_code TEXT,
+      country_name TEXT,
+      language TEXT,
+      page_url TEXT,
+      user_agent TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
+    )
+  `);
+
   // 인덱스 생성
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_videos_site_id ON videos(site_id);
@@ -75,6 +91,8 @@ export function initDB() {
     CREATE INDEX IF NOT EXISTS idx_videos_visibility ON videos(visibility);
     CREATE INDEX IF NOT EXISTS idx_users_site_id ON users(site_id);
     CREATE INDEX IF NOT EXISTS idx_user_provider_keys_user_id ON user_provider_keys(user_id);
+    CREATE INDEX IF NOT EXISTS idx_visits_site_id ON visits(site_id);
+    CREATE INDEX IF NOT EXISTS idx_visits_created_at ON visits(created_at);
   `);
 
   // 마이그레이션: 기존 videos 테이블에 새 컬럼 추가
@@ -113,6 +131,64 @@ export function initDB() {
       console.warn("⚠️ status 컬럼 추가 실패:", err.message);
     }
   }
+
+  // Stats 컬럼 마이그레이션
+  try {
+    db.exec(`ALTER TABLE videos ADD COLUMN views_count INTEGER DEFAULT 0`);
+    console.log("✅ Migration: views_count 컬럼 추가됨");
+  } catch (err) {
+    if (err.message.includes("duplicate column")) {
+      // 이미 컬럼이 존재하면 무시
+    } else {
+      console.warn("⚠️ views_count 컬럼 추가 실패:", err.message);
+    }
+  }
+
+  try {
+    db.exec(`ALTER TABLE videos ADD COLUMN likes_count INTEGER DEFAULT 0`);
+    console.log("✅ Migration: likes_count 컬럼 추가됨");
+  } catch (err) {
+    if (err.message.includes("duplicate column")) {
+      // 이미 컬럼이 존재하면 무시
+    } else {
+      console.warn("⚠️ likes_count 컬럼 추가 실패:", err.message);
+    }
+  }
+
+  try {
+    db.exec(`ALTER TABLE videos ADD COLUMN shares_count INTEGER DEFAULT 0`);
+    console.log("✅ Migration: shares_count 컬럼 추가됨");
+  } catch (err) {
+    if (err.message.includes("duplicate column")) {
+      // 이미 컬럼이 존재하면 무시
+    } else {
+      console.warn("⚠️ shares_count 컬럼 추가 실패:", err.message);
+    }
+  }
+
+  try {
+    db.exec(`ALTER TABLE videos ADD COLUMN stats_updated_at TEXT`);
+    console.log("✅ Migration: stats_updated_at 컬럼 추가됨");
+  } catch (err) {
+    if (err.message.includes("duplicate column")) {
+      // 이미 컬럼이 존재하면 무시
+    } else {
+      console.warn("⚠️ stats_updated_at 컬럼 추가 실패:", err.message);
+    }
+  }
+
+  try {
+    db.exec(`ALTER TABLE videos ADD COLUMN stats_updated_by TEXT`);
+    console.log("✅ Migration: stats_updated_by 컬럼 추가됨");
+  } catch (err) {
+    if (err.message.includes("duplicate column")) {
+      // 이미 컬럼이 존재하면 무시
+    } else {
+      console.warn("⚠️ stats_updated_by 컬럼 추가 실패:", err.message);
+    }
+  }
+
+  console.log("✅ Database initialized successfully");
 }
 
 // API Key 해싱
