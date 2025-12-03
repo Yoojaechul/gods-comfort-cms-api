@@ -188,6 +188,17 @@ export function initDB() {
     }
   }
 
+  try {
+    db.exec(`ALTER TABLE videos ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))`);
+    console.log("✅ Migration: updated_at 컬럼 추가됨");
+  } catch (err) {
+    if (err.message.includes("duplicate column")) {
+      // 이미 컬럼이 존재하면 무시
+    } else {
+      console.warn("⚠️ updated_at 컬럼 추가 실패:", err.message);
+    }
+  }
+
   console.log("✅ Database initialized successfully");
 }
 
