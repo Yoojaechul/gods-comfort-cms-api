@@ -1,0 +1,248 @@
+.bulk-videos-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.bulk-videos-modal-content {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 95vw;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.bulk-videos-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: none;
+  border: none;
+  font-size: 32px;
+  color: #666;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.bulk-videos-modal-close:hover {
+  color: #000;
+}
+
+.bulk-videos-modal-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0 0 20px 0;
+  padding-right: 40px;
+}
+
+.bulk-videos-modal-error {
+  background-color: #fee;
+  border: 1px solid #fcc;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 20px;
+}
+
+.bulk-videos-modal-error p {
+  margin: 0;
+  color: #c33;
+  font-size: 14px;
+}
+
+.bulk-videos-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.bulk-videos-info {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+}
+
+.bulk-videos-add-row-button {
+  padding: 8px 16px;
+  background: #0052cc;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.bulk-videos-add-row-button:hover:not(:disabled) {
+  background: #003d99;
+}
+
+.bulk-videos-add-row-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.bulk-videos-table-wrapper {
+  overflow-x: auto;
+  margin-bottom: 20px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+}
+
+.bulk-videos-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 800px;
+}
+
+.bulk-videos-table thead {
+  background-color: #f9f9f9;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.bulk-videos-table th {
+  padding: 12px 8px;
+  text-align: left;
+  font-weight: 600;
+  color: #333;
+  border-bottom: 2px solid #ddd;
+  white-space: nowrap;
+}
+
+.bulk-videos-table td {
+  padding: 8px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: middle;
+}
+
+.bulk-videos-table tbody tr:hover {
+  background-color: #f9f9f9;
+}
+
+.bulk-videos-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.bulk-videos-input,
+.bulk-videos-input-number,
+.bulk-videos-select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+.bulk-videos-input:focus,
+.bulk-videos-input-number:focus,
+.bulk-videos-select:focus {
+  outline: none;
+  border-color: #0052cc;
+}
+
+.bulk-videos-input-number {
+  text-align: right;
+}
+
+.bulk-videos-remove-row-button {
+  padding: 4px 8px;
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.bulk-videos-remove-row-button:hover {
+  background: #c82333;
+}
+
+.bulk-videos-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid #eee;
+}
+
+.bulk-videos-button-cancel,
+.bulk-videos-button-submit {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.bulk-videos-button-cancel {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.bulk-videos-button-cancel:hover {
+  background: #e0e0e0;
+}
+
+.bulk-videos-button-submit {
+  background: #0052cc;
+  color: white;
+}
+
+.bulk-videos-button-submit:hover:not(:disabled) {
+  background: #003d99;
+}
+
+.bulk-videos-button-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+

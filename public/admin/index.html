@@ -8,7 +8,10 @@
 </head>
 <body>
   <div class="container">
-    <h1>🔐 CMS Admin Panel</h1>
+    <div class="header">
+      <h1>🔐 CMS Admin Panel</h1>
+      <div id="userInfo" class="user-info"></div>
+    </div>
 
     <!-- API Key 설정 -->
     <div class="section">
@@ -82,6 +85,68 @@
         <tbody></tbody>
       </table>
     </div>
+
+    <!-- 영상 관리 -->
+    <div class="section">
+      <h2>영상 관리</h2>
+      <div class="form-group">
+        <label>사이트 필터</label>
+        <select id="videoSiteFilter">
+          <option value="">전체 사이트</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>플랫폼 필터</label>
+        <select id="videoPlatformFilter">
+          <option value="">전체 플랫폼</option>
+          <option value="youtube">YouTube</option>
+          <option value="facebook">Facebook</option>
+          <option value="other">기타</option>
+        </select>
+      </div>
+      <button onclick="loadAllVideos()" class="secondary">영상 목록 새로고침</button>
+      <div id="videosStatus"></div>
+      <table id="videosTable">
+        <thead>
+          <tr>
+            <th>제목</th>
+            <th>플랫폼</th>
+            <th>사이트 ID</th>
+            <th>작성자</th>
+            <th>공개 여부</th>
+            <th>언어</th>
+            <th>생성일</th>
+            <th>작업</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- 접속자 통계 -->
+    <div class="section">
+      <h2>접속자 통계</h2>
+      <div class="form-group">
+        <label>사이트 선택</label>
+        <select id="analyticsSiteSelect">
+          <option value="">전체 사이트</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>기간 선택</label>
+        <select id="analyticsPeriodSelect">
+          <option value="daily">최근 24시간</option>
+          <option value="weekly">최근 7일</option>
+          <option value="monthly">최근 30일</option>
+          <option value="quarterly">최근 90일</option>
+          <option value="half-yearly">최근 180일</option>
+          <option value="yearly">최근 365일</option>
+        </select>
+      </div>
+      <button onclick="loadAnalytics()" class="secondary">통계 조회</button>
+      <div id="analyticsStatus"></div>
+      <div id="analyticsContent"></div>
+    </div>
   </div>
 
   <!-- API Key 모달 -->
@@ -91,6 +156,15 @@
       <div class="warning">이 키를 안전한 곳에 저장하세요. 다시 확인할 수 없습니다.</div>
       <div class="api-key-display" id="modalApiKey"></div>
       <button onclick="closeApiKeyModal()">확인</button>
+    </div>
+  </div>
+
+  <!-- 비디오 모달 -->
+  <div id="videoModal" class="video-modal hidden">
+    <div class="video-modal-backdrop" onclick="closeVideoModal()"></div>
+    <div class="video-modal-content">
+      <button class="video-modal-close" onclick="closeVideoModal()">×</button>
+      <div id="videoModalInner"></div>
     </div>
   </div>
 

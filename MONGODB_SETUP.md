@@ -59,3 +59,23 @@
 - 실시간 데이터베이스 모니터링: https://cloud.mongodb.com
 - Collections: `users`, `sites`, `videos`, `visits`
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

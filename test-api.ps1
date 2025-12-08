@@ -186,3 +186,44 @@ Write-Host ""
 Write-Host "Admin API Key: $adminKey" -ForegroundColor Green
 Write-Host "Creator API Key: $creatorKey" -ForegroundColor Green
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

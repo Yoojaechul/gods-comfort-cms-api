@@ -63,8 +63,37 @@ export async function enrichYouTubeMetadata(sourceUrl, userTitle = null) {
   };
 }
 
+// Facebook 썸네일 자동 가져오기
+export async function fetchFacebookThumbnail(sourceUrl, accessToken = null) {
+  // Access Token이 없으면 null 반환
+  if (!accessToken) {
+    console.warn("⚠️ Facebook Access Token이 없어 썸네일을 가져올 수 없습니다.");
+    return null;
+  }
+
+  try {
+    // Facebook Graph API oEmbed 엔드포인트 사용
+    const oembedUrl = `https://graph.facebook.com/v11.0/oembed_video?url=${encodeURIComponent(sourceUrl)}&access_token=${accessToken}`;
+    const response = await fetch(oembedUrl, { timeout: 5000 });
+    
+    if (response.ok) {
+      const data = await response.json();
+      // oEmbed 응답에서 썸네일 URL 추출
+      if (data.thumbnail_url) {
+        return data.thumbnail_url;
+      }
+    } else {
+      console.warn(`⚠️ Facebook oEmbed API 호출 실패: ${response.status} ${response.statusText}`);
+    }
+  } catch (err) {
+    console.warn("⚠️ Facebook 썸네일 가져오기 오류:", err.message);
+  }
+
+  return null;
+}
+
 // Facebook embed URL 생성
-export function enrichFacebookMetadata(sourceUrl, userTitle = null, userThumbnail = null) {
+export async function enrichFacebookMetadata(sourceUrl, userTitle = null, userThumbnail = null, accessToken = null) {
   // /share/ URL은 embed 플러그인과 호환되지 않음
   if (sourceUrl.includes("/share/v/") || sourceUrl.includes("/share/r/")) {
     console.warn("⚠️ Facebook /share/ URL은 embed가 제한적입니다. 원본 URL(/watch/ 또는 /videos/)을 사용하세요.");
@@ -85,20 +114,26 @@ export function enrichFacebookMetadata(sourceUrl, userTitle = null, userThumbnai
     )}&show_text=true&width=560`;
   }
 
+  // 썸네일이 없고 Access Token이 있으면 자동으로 가져오기 시도
+  let thumbnailUrl = userThumbnail;
+  if (!thumbnailUrl && accessToken) {
+    thumbnailUrl = await fetchFacebookThumbnail(sourceUrl, accessToken);
+  }
+
   return {
     title: userTitle || null,
-    thumbnail_url: userThumbnail || null,
+    thumbnail_url: thumbnailUrl || null,
     embed_url: embedUrl,
   };
 }
 
 // 메타정보 자동 보강 (플랫폼별)
-export async function enrichMetadata(platform, sourceUrl, userTitle = null, userThumbnail = null) {
+export async function enrichMetadata(platform, sourceUrl, userTitle = null, userThumbnail = null, accessToken = null) {
   switch (platform) {
     case "youtube":
       return await enrichYouTubeMetadata(sourceUrl, userTitle);
     case "facebook":
-      return enrichFacebookMetadata(sourceUrl, userTitle, userThumbnail);
+      return await enrichFacebookMetadata(sourceUrl, userTitle, userThumbnail, accessToken);
     default:
       return {
         title: userTitle || null,

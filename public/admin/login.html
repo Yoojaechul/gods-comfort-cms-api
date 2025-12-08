@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Login - CMS</title>
+  <link rel="stylesheet" href="/admin/login.css">
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <h1>🔐 CMS Admin Login</h1>
+        <p>선교홈페이지 관리자 로그인</p>
+      </div>
+
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label for="email">이메일</label>
+          <input 
+            type="email" 
+            id="email" 
+            name="email" 
+            placeholder="consulting_manager@naver.com"
+            required
+            autocomplete="email"
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="password">비밀번호</label>
+          <input 
+            type="password" 
+            id="password" 
+            name="password" 
+            placeholder="비밀번호를 입력하세요"
+            required
+            autocomplete="current-password"
+            minlength="6"
+          >
+        </div>
+
+        <div id="errorMessage" class="error-message"></div>
+        <div id="successMessage" class="success-message"></div>
+
+        <button type="submit" id="loginButton" class="login-button">
+          <span id="buttonText">로그인</span>
+          <span id="buttonSpinner" class="spinner" style="display: none;">⏳</span>
+        </button>
+      </form>
+
+      <div class="login-footer">
+        <p>비밀번호를 잊으셨나요? 관리자에게 문의하세요.</p>
+        <div class="server-info">
+          <small>
+            NestJS API: <span id="apiServer">localhost:8788</span>
+          </small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/admin/login.js"></script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

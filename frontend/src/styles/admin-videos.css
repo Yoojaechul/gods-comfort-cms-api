@@ -1,0 +1,705 @@
+/* ============================================
+   Admin Videos 페이지 스타일
+   ============================================ */
+
+.admin-videos-page {
+  padding: 0;
+}
+
+/* 헤더 */
+.admin-videos-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #eee;
+}
+
+.admin-videos-page-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0;
+}
+
+.admin-videos-header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.admin-videos-button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.admin-videos-button-primary {
+  background: #0052cc;
+  color: white;
+}
+
+.admin-videos-button-primary:hover {
+  background: #003d99;
+}
+
+.admin-videos-button-secondary {
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ddd;
+}
+
+.admin-videos-button-secondary:hover {
+  background: #e0e0e0;
+}
+
+/* 탭 */
+.admin-videos-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  border-bottom: 2px solid #eee;
+}
+
+.admin-videos-tab {
+  padding: 12px 24px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  transition: all 0.2s;
+  margin-bottom: -2px;
+}
+
+.admin-videos-tab:hover {
+  color: #0052cc;
+}
+
+.admin-videos-tab.active {
+  color: #0052cc;
+  border-bottom-color: #0052cc;
+  font-weight: 600;
+}
+
+/* 필터/검색 카드 */
+.admin-videos-filter-card {
+  padding: 20px;
+  margin-bottom: 24px;
+}
+
+.admin-videos-filter-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.admin-videos-search-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 10px 16px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.admin-videos-search-input:focus {
+  border-color: #0052cc;
+}
+
+.admin-videos-select {
+  padding: 10px 16px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+  min-width: 180px;
+}
+
+.admin-videos-select:focus {
+  border-color: #0052cc;
+}
+
+.admin-videos-date-input {
+  padding: 10px 16px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+  min-width: 150px;
+}
+
+.admin-videos-date-input:focus {
+  border-color: #0052cc;
+}
+
+.admin-videos-search-button {
+  padding: 10px 24px;
+  background-color: #0052cc;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.admin-videos-search-button:hover {
+  background-color: #0040a0;
+}
+
+/* 일괄 작업 툴바 */
+.admin-videos-bulk-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  background-color: #f0f7ff;
+  border: 1px solid #0052cc;
+}
+
+.admin-videos-bulk-info {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0052cc;
+}
+
+.admin-videos-bulk-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.admin-videos-bulk-button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.admin-videos-bulk-delete {
+  background-color: #dc3545;
+  color: white;
+}
+
+.admin-videos-bulk-delete:hover {
+  background-color: #c82333;
+}
+
+.admin-videos-bulk-status {
+  background-color: #6c757d;
+  color: white;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* 영상 리스트 */
+.admin-videos-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.admin-videos-select-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 2px solid #eee;
+  margin-bottom: 8px;
+}
+
+.admin-videos-select-all label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  cursor: pointer;
+}
+
+.admin-videos-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.admin-videos-item {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  transition: all 0.2s;
+  align-items: flex-start;
+}
+
+.admin-videos-item-checkbox {
+  display: flex;
+  align-items: center;
+  padding-top: 4px;
+}
+
+.admin-videos-item:hover {
+  border-color: #ddd;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.admin-videos-item-thumbnail {
+  width: 96px;
+  height: 96px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background-color: #f5f5f5;
+}
+
+.admin-videos-item-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-videos-thumbnail-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #e0e0e0;
+  color: #666;
+}
+
+.admin-videos-thumbnail-icon {
+  font-size: 32px;
+}
+
+.admin-videos-item-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-videos-item-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0;
+}
+
+.admin-videos-item-description {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.admin-videos-item-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 8px;
+}
+
+.admin-videos-item-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #666;
+  margin-top: 8px;
+}
+
+.admin-videos-metric {
+  display: inline-block;
+  margin-right: 16px;
+}
+
+.admin-videos-item-creator {
+  font-weight: 500;
+}
+
+.admin-videos-item-actions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+
+.admin-videos-action-button {
+  padding: 8px 16px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: white;
+}
+
+.admin-videos-action-view {
+  color: #0052cc;
+  border-color: #0052cc;
+}
+
+.admin-videos-action-view:hover {
+  background-color: #0052cc;
+  color: white;
+}
+
+.admin-videos-action-edit {
+  color: #28a745;
+  border-color: #28a745;
+}
+
+.admin-videos-action-edit:hover {
+  background-color: #28a745;
+  color: white;
+}
+
+.admin-videos-action-delete {
+  color: #dc3545;
+  border-color: #dc3545;
+}
+
+.admin-videos-action-delete:hover {
+  background-color: #dc3545;
+  color: white;
+}
+
+.admin-videos-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #999;
+}
+
+.admin-videos-error {
+  background-color: #fee;
+  border: 1px solid #fcc;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+  color: #c33;
+}
+
+.admin-loading {
+  text-align: center;
+  padding: 60px 20px;
+  color: #666;
+}
+
+/* 영상 미리보기 모달 */
+.admin-videos-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  overflow: hidden;
+}
+
+/* 모달이 열려있을 때 body 스크롤 방지 */
+body.modal-open {
+  overflow: hidden;
+}
+
+.admin-videos-modal-content {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 960px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  margin: auto;
+}
+
+.admin-videos-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: none;
+  border: none;
+  font-size: 32px;
+  color: #666;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.admin-videos-modal-close:hover {
+  color: #000;
+}
+
+.admin-videos-modal-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0 0 16px 0;
+  padding-right: 40px;
+}
+
+.admin-videos-modal-info {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.admin-videos-modal-info p {
+  font-size: 14px;
+  color: #666;
+  margin: 8px 0;
+}
+
+.admin-videos-modal-info strong {
+  color: #333;
+}
+
+.admin-videos-modal-metrics {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #f9f9f9;
+  border-radius: 8px;
+}
+
+.admin-videos-modal-metric-item {
+  font-size: 14px;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.admin-videos-modal-metric-item strong {
+  color: #1a1a1a;
+  margin-right: 8px;
+}
+
+.admin-videos-modal-preview {
+  margin-bottom: 20px;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-videos-modal-preview-image {
+  width: 100%;
+  height: auto;
+  max-height: 500px;
+  object-fit: contain;
+  display: block;
+}
+
+.admin-videos-modal-preview-placeholder {
+  width: 100%;
+  height: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #1a1a1a;
+  color: #999;
+}
+
+.admin-videos-modal-preview-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+.admin-videos-modal-preview-placeholder p {
+  margin: 0;
+  font-size: 16px;
+  color: #999;
+}
+
+.admin-videos-modal-player {
+  margin-bottom: 20px;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.admin-videos-modal-embed-wrapper {
+  position: relative;
+  padding-bottom: 56.25%; /* 16:9 aspect ratio */
+  height: 0;
+  overflow: hidden;
+}
+
+.admin-videos-modal-embed-wrapper iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.admin-videos-modal-video-wrapper {
+  width: 100%;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.admin-videos-modal-video-wrapper video {
+  display: block;
+  width: 100%;
+  max-height: 70vh;
+  background: #000;
+}
+
+.admin-videos-modal-no-video {
+  padding: 60px 20px;
+  text-align: center;
+  color: #999;
+}
+
+.admin-videos-modal-description {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #f9f9f9;
+  border-radius: 8px;
+}
+
+.admin-videos-modal-description p {
+  font-size: 14px;
+  color: #333;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.admin-videos-modal-button {
+  width: 100%;
+  padding: 12px 24px;
+  background-color: #0052cc;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.admin-videos-modal-button:hover {
+  background-color: #0040a0;
+}
+
+/* 페이지네이션 */
+.admin-videos-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 24px;
+  padding: 16px 0;
+  border-top: 1px solid #eee;
+}
+
+.admin-videos-pagination-button {
+  min-width: 36px;
+  height: 36px;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background-color: white;
+  color: #333;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-videos-pagination-button:hover:not(:disabled) {
+  background-color: #f5f5f5;
+  border-color: #0052cc;
+  color: #0052cc;
+}
+
+.admin-videos-pagination-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: #f9f9f9;
+}
+
+.admin-videos-pagination-button-active {
+  background-color: #0052cc;
+  color: white;
+  border-color: #0052cc;
+  font-weight: 600;
+}
+
+.admin-videos-pagination-button-active:hover {
+  background-color: #0040a0;
+  border-color: #0040a0;
+}
+
+/* 반응형 */
+@media (max-width: 768px) {
+  .admin-videos-filter-row {
+    flex-direction: column;
+  }
+
+  .admin-videos-search-input,
+  .admin-videos-select,
+  .admin-videos-date-input {
+    width: 100%;
+  }
+
+  .admin-videos-item {
+    flex-direction: column;
+  }
+
+  .admin-videos-item-thumbnail {
+    width: 100%;
+    height: 180px;
+  }
+
+  .admin-videos-item-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+

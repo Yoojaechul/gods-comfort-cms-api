@@ -1,0 +1,7 @@
+import AdminDashboardLayout from "./components/AdminDashboardLayout";
+
+function App() {
+  return <AdminDashboardLayout />;
+}
+
+export default App;
