@@ -20,14 +20,37 @@ async function bootstrap() {
     prefix: '/uploads/thumbnails',
   });
 
+  /**
+   * ✅ CORS 설정 (운영 + 로컬)
+   * - Firebase CMS(웹앱)에서 Render API 호출 시 preflight(OPTIONS)가 발생하므로
+   *   운영 도메인을 반드시 허용해야 합니다.
+   * - credentials: true 이면 origin은 '*' 불가 → 정확한 도메인만 허용해야 합니다.
+   */
+  const allowedOrigins = [
+    // 로컬 개발
+    'http://localhost:5173',
+    'http://localhost:8787',
+    'http://localhost:3000',
+
+    // 운영( Firebase Hosting )
+    'https://gods-comfort-word-cms.web.app',
+    'https://cms.godcomfortword.com',
+  ];
+
   app.enableCors({
-    origin: [
-      'http://localhost:5173',  // React 프론트엔드
-      'http://localhost:8787',  // CMS 서버 (Fastify)
-      'http://localhost:3000',  // Next.js 홈페이지
-    ],
+    origin: (origin, callback) => {
+      // origin 없는 요청(서버 간 호출/헬스체크 등)은 허용
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked for origin: ${origin}`), false);
+    },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    credentials: true, // 쿠키 전송을 위해 credentials: true 필요
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
   });
 
   app.useGlobalPipes(
@@ -56,15 +79,14 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api-docs', app, document);
 
-  // NestJS API 서버는 8788 포트에서 실행 (CMS 서버 8787과 구분)
+  // Render에서는 PORT 환경변수를 반드시 사용합니다.
   const port = process.env.PORT || 8788;
+
   await app.listen(port);
   console.log('============================================================');
-  console.log(`✅ NestJS API Server running on http://localhost:${port}`);
-  console.log(`📚 Swagger UI: http://localhost:${port}/api-docs`);
+  console.log(`✅ NestJS API Server running on port ${port}`);
+  console.log(`📚 Swagger UI: /api-docs`);
   console.log('============================================================');
 }
+
 bootstrap();
-
-
-
