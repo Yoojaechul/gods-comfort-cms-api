@@ -10,6 +10,7 @@ import { DatabaseModule } from '../database/database.module';
 @Module({
   imports: [
     DatabaseModule,
+    ConfigModule, // ConfigService를 AuthService에서 사용하기 위해 추가
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -27,6 +28,9 @@ import { DatabaseModule } from '../database/database.module';
   exports: [AuthService],
 })
 export class AuthModule {}
+
+
+
 
 
 

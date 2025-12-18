@@ -5,6 +5,8 @@ import { CMS_API_BASE } from "../config";
 import { useAuth } from "../contexts/AuthContext";
 import VideoTable from "../components/VideoTable";
 import BatchUploadModal from "../components/BatchUploadModal";
+import { getVideosListApiEndpoint, getBatchDeleteApiEndpoint } from "../lib/videoApi";
+import { sortVideosByManagementNumber } from "../utils/videoSort";
 
 export default function VideosPage() {
   const { token, user } = useAuth();
@@ -26,12 +28,49 @@ export default function VideosPage() {
 
   const fetchVideos = async () => {
     try {
-      const endpoint = isAdmin ? "/admin/videos" : "/videos";
+      if (!user?.role) {
+        throw new Error("사용자 역할 정보를 찾을 수 없습니다.");
+      }
+      const userRole = user.role as "admin" | "creator";
+      const endpoint = getVideosListApiEndpoint(userRole);
       const response = await fetch(`${CMS_API_BASE}${endpoint}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
-      setVideos(data.videos || []);
+      
+      // API 응답을 항상 배열로 정규화
+      const items: any[] = Array.isArray(data) 
+        ? data 
+        : (data?.items || data?.videos || data?.data || []);
+      
+      // 관리번호 필드명 표준화 및 정렬
+      const normalizedItems = items.map((item: any) => {
+        // 관리번호 필드명 표준화: 다양한 필드명을 videoManageNo로 통일
+        const rawManageNo = 
+          item.videoManageNo || 
+          item.video_manage_no || 
+          item.manageNo || 
+          item.managementNo || 
+          item.managementId || 
+          item.management_no || 
+          item.managementNumber || 
+          item.adminCode || 
+          item.code || 
+          item.video_code || 
+          item.management_id || 
+          item.adminId || 
+          item.admin_id || 
+          null;
+        
+        return {
+          ...item,
+          videoManageNo: rawManageNo, // 표준 필드명으로 통일
+        };
+      });
+      
+      // 관리번호 기준 내림차순 정렬 (최신 영상이 먼저 오도록)
+      const sortedVideos = sortVideosByManagementNumber(normalizedItems);
+      setVideos(sortedVideos);
     } catch (error) {
       console.error("Failed to fetch videos:", error);
     } finally {
@@ -43,7 +82,11 @@ export default function VideosPage() {
     if (selectedVideos.length === 0) return;
 
     try {
-      const endpoint = isAdmin ? "/admin/videos/batch-delete" : "/videos/batch-delete";
+      if (!user?.role) {
+        throw new Error("사용자 역할 정보를 찾을 수 없습니다.");
+      }
+      const userRole = user.role as "admin" | "creator";
+      const endpoint = getBatchDeleteApiEndpoint(userRole);
       await fetch(`${CMS_API_BASE}${endpoint}`, {
         method: "POST",
         headers: {
@@ -119,6 +162,58 @@ export default function VideosPage() {
     </DashboardLayout>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -63,6 +63,36 @@ export async function enrichYouTubeMetadata(sourceUrl, userTitle = null) {
   };
 }
 
+// Facebook URL 정규화 (선택적, 실패 시 원본 유지)
+// 프론트엔드 XFBML이 우선이므로 최소한의 정규화만 수행
+export function normalizeFacebookUrl(url) {
+  if (!url || typeof url !== 'string') {
+    return url;
+  }
+
+  try {
+    // fb.watch 단축 URL을 facebook.com/watch/?v= 형태로 변환 시도
+    // 참고: XFBML은 다양한 URL 형식을 지원하므로 정규화는 선택적
+    if (url.includes('fb.watch/')) {
+      // fb.watch/VIDEO_ID 형태를 facebook.com/watch/?v=VIDEO_ID로 변환
+      const match = url.match(/fb\.watch\/([^/?&#]+)/);
+      if (match && match[1]) {
+        const videoId = match[1];
+        const normalized = `https://www.facebook.com/watch/?v=${videoId}`;
+        console.log(`[normalizeFacebookUrl] fb.watch 변환: ${url} -> ${normalized}`);
+        return normalized;
+      }
+    }
+
+    // 이미 facebook.com 형태면 그대로 반환 (XFBML이 처리 가능)
+    return url;
+  } catch (err) {
+    // 정규화 실패 시 원본 URL 유지
+    console.warn(`[normalizeFacebookUrl] 정규화 실패, 원본 유지: ${url}`, err.message);
+    return url;
+  }
+}
+
 // Facebook 썸네일 자동 가져오기
 export async function fetchFacebookThumbnail(sourceUrl, accessToken = null) {
   // Access Token이 없으면 null 반환
@@ -94,30 +124,33 @@ export async function fetchFacebookThumbnail(sourceUrl, accessToken = null) {
 
 // Facebook embed URL 생성
 export async function enrichFacebookMetadata(sourceUrl, userTitle = null, userThumbnail = null, accessToken = null) {
+  // URL 정규화 (선택적, 실패 시 원본 유지)
+  const normalizedUrl = normalizeFacebookUrl(sourceUrl);
+
   // /share/ URL은 embed 플러그인과 호환되지 않음
-  if (sourceUrl.includes("/share/v/") || sourceUrl.includes("/share/r/")) {
+  if (normalizedUrl.includes("/share/v/") || normalizedUrl.includes("/share/r/")) {
     console.warn("⚠️ Facebook /share/ URL은 embed가 제한적입니다. 원본 URL(/watch/ 또는 /videos/)을 사용하세요.");
     // 그래도 시도는 해봄
   }
 
-  // Facebook 플러그인 URL 생성
+  // Facebook 플러그인 URL 생성 (정규화된 URL 사용)
   // video로 판단 (일반적으로 /videos/ 경로 포함)
   let embedUrl;
-  if (sourceUrl.includes("/videos/") || sourceUrl.includes("/watch")) {
+  if (normalizedUrl.includes("/videos/") || normalizedUrl.includes("/watch") || normalizedUrl.includes("/reel/")) {
     embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(
-      sourceUrl
+      normalizedUrl
     )}&show_text=false&width=560`;
   } else {
     // post로 판단
     embedUrl = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(
-      sourceUrl
+      normalizedUrl
     )}&show_text=true&width=560`;
   }
 
-  // 썸네일이 없고 Access Token이 있으면 자동으로 가져오기 시도
+  // 썸네일이 없고 Access Token이 있으면 자동으로 가져오기 시도 (정규화된 URL 사용)
   let thumbnailUrl = userThumbnail;
   if (!thumbnailUrl && accessToken) {
-    thumbnailUrl = await fetchFacebookThumbnail(sourceUrl, accessToken);
+    thumbnailUrl = await fetchFacebookThumbnail(normalizedUrl, accessToken);
   }
 
   return {

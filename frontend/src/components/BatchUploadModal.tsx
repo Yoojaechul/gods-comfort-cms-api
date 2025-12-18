@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { CMS_API_BASE } from "../config";
+import { useAuth } from "../contexts/AuthContext";
+import { getBatchUploadApiEndpoint } from "../lib/videoApi";
 
 interface BatchUploadModalProps {
   onClose: () => void;
@@ -14,6 +16,7 @@ export default function BatchUploadModal({
   token,
   isAdmin,
 }: BatchUploadModalProps) {
+  const { user } = useAuth();
   const [rows, setRows] = useState([
     {
       videoType: "youtube" as "youtube" | "facebook",
@@ -56,19 +59,39 @@ export default function BatchUploadModal({
     setSubmitting(true);
     setResults([]);
 
+    // videoType을 소문자로 정규화하여 백엔드 요구사항에 맞춤
+    // 백엔드에서 요구하는 값: "youtube", "facebook", "file" (소문자만)
     const videosToAdd = rows
       .filter((row) => row.title && (row.youtubeId || row.facebookUrl))
-      .map((row) => ({
-        videoType: row.videoType,
-        title: row.title,
-        description: row.description,
-        language: row.language,
-        youtubeId: row.videoType === "youtube" ? row.youtubeId : undefined,
-        facebookUrl: row.videoType === "facebook" ? row.facebookUrl : undefined,
-      }));
+      .map((row) => {
+        const normalizedVideoType = (row.videoType || "youtube").toLowerCase();
+        const videoType = normalizedVideoType === "youtube" || normalizedVideoType === "facebook" || normalizedVideoType === "file"
+          ? normalizedVideoType
+          : "youtube"; // 기본값은 youtube
+        
+        return {
+          videoType: videoType, // 정규화된 소문자 값
+          title: row.title,
+          description: row.description,
+          language: row.language,
+          youtubeId: videoType === "youtube" ? row.youtubeId : undefined,
+          facebookUrl: videoType === "facebook" ? row.facebookUrl : undefined,
+        };
+      });
+    
+    console.log("배치 업로드 payload:", videosToAdd);
+    console.log("배치 업로드 payload (videoType 확인):", videosToAdd.map(v => ({ videoType: v.videoType })));
 
     try {
-      const response = await fetch(`${CMS_API_BASE}/videos/batch`, {
+      // role에 따라 API 엔드포인트 결정
+      if (!user?.role) {
+        throw new Error("사용자 역할 정보를 찾을 수 없습니다. 다시 로그인해주세요.");
+      }
+      const userRole = user.role as "admin" | "creator";
+      const apiPath = getBatchUploadApiEndpoint(userRole);
+      const url = `${CMS_API_BASE}${apiPath}`;
+      
+      const response = await fetch(url, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -251,6 +274,58 @@ export default function BatchUploadModal({
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

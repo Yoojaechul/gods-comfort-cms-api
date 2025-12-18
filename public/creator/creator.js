@@ -39,7 +39,7 @@ function logout() {
   localStorage.removeItem("creator_user");
   localStorage.removeItem("creator_token_expires");
   
-  window.location.href = "/creator/login.html";
+  window.location.href = "/login";
 }
 
 // 인증 체크 실행 플래그 (중복 실행 방지)
@@ -61,7 +61,7 @@ function checkAuth() {
     if (!token) {
       console.log("[checkAuth] 토큰 없음");
       alert("인증이 만료되었습니다. 다시 로그인해주세요.");
-      window.location.href = "/creator/login.html";
+      window.location.href = "/login";
       return false;
     }
 
@@ -396,7 +396,7 @@ async function loadVideos() {
 
   if (!token) {
     alert("인증이 만료되었습니다. 다시 로그인해주세요.");
-    window.location.href = "/creator/login.html";
+      window.location.href = "/login";
     return;
   }
 

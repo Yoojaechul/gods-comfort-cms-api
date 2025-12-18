@@ -7,7 +7,7 @@ export default function AdminDashboardLayout() {
   const location = useLocation();
 
   const menuItems = [
-    { path: "/admin", label: "Dashboard", icon: "📊" },
+    { path: "/admin/dashboard", label: "Dashboard", icon: "📊" },
     { path: "/admin/videos", label: "Videos", icon: "🎬" },
     { path: "/admin/creators", label: "Creators", icon: "👥" },
     { path: "/admin/users", label: "Users", icon: "👤" },
@@ -39,7 +39,7 @@ export default function AdminDashboardLayout() {
             <NavLink
               key={item.path}
               to={item.path}
-              end={item.path === "/admin"}
+              end={item.path === "/admin/dashboard"}
               className={({ isActive }) =>
                 `admin-menu-item ${isActive ? "active" : ""}`
               }

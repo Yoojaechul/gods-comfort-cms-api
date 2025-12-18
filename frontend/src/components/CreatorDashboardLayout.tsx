@@ -11,13 +11,9 @@ export default function CreatorDashboardLayout({ children }: CreatorDashboardLay
   const { user, logout } = useAuth();
   const location = useLocation();
 
+  // 크리에이터 메뉴: My Videos만 표시
   const menuItems = [
-    { path: "/creator", label: "Dashboard", icon: "📊" },
-    { path: "/creator/videos", label: "My Videos", icon: "🎬" },
-    { path: "/creator/upload", label: "Upload", icon: "📤" },
-    { path: "/creator/drafts", label: "Drafts", icon: "📝" },
-    { path: "/creator/analytics", label: "Analytics", icon: "📈" },
-    { path: "/creator/profile", label: "Profile", icon: "👤" },
+    { path: "/creator/my-videos", label: "My Videos", icon: "🎬" },
   ];
 
   const getPageTitle = () => {
@@ -25,7 +21,7 @@ export default function CreatorDashboardLayout({ children }: CreatorDashboardLay
     if (currentItem) {
       return currentItem.label;
     }
-    return "대시보드";
+    return "My Videos";
   };
 
   const getUserInitials = () => {
@@ -91,6 +87,8 @@ export default function CreatorDashboardLayout({ children }: CreatorDashboardLay
     </div>
   );
 }
+
+
 
 
 

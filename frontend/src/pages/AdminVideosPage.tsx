@@ -1,15 +1,28 @@
 import { useEffect, useState } from "react";
 import { CMS_API_BASE } from "../config";
 import { useAuth } from "../contexts/AuthContext";
+import { apiGet } from "../lib/apiClient";
 import type { Video } from "../types/video";
 import VideoFormModal from "../components/admin/VideoFormModal";
 import BulkVideosModal from "../components/admin/BulkVideosModal";
 import VideoPreviewModal from "../components/VideoPreviewModal";
+import VideoCard from "../components/VideoCard";
+import { getVideoDeleteApiEndpoint, getVideosListApiEndpoint } from "../lib/videoApi";
+import { sortVideosByManagementNumber } from "../utils/videoSort";
+import { normalizeThumbnailUrl } from "../utils/videoMetadata";
 import "../styles/admin-videos.css";
 import "../styles/admin-common.css";
 
-export default function AdminVideosPage() {
-  const { token } = useAuth();
+interface VideosPageProps {
+  role?: "admin" | "creator";
+}
+
+export default function AdminVideosPage({ role = "admin" }: VideosPageProps) {
+  const { token, user } = useAuth();
+  
+  // role prop이 없으면 user의 role 사용
+  const currentRole = role || user?.role || "admin";
+  const isAdmin = currentRole === "admin";
   
   // 원본 영상 목록 (API에서 가져온 전체 목록)
   const [videos, setVideos] = useState<Video[]>([]);
@@ -52,10 +65,11 @@ export default function AdminVideosPage() {
   // 초기 로드 후 전체 영상 표시 (서버에서 이미 필터링된 데이터를 받으므로 그대로 사용)
   useEffect(() => {
     if (!isLoading && Array.isArray(videos)) {
-      // 서버에서 필터링된 데이터를 받았으므로 그대로 사용
-      setFilteredVideos(videos);
+      // 관리번호 기준 내림차순 정렬 (최신 영상이 먼저 오도록)
+      const sortedVideos = sortVideosByManagementNumber(videos);
+      setFilteredVideos(sortedVideos);
       // 데이터가 변경되면 현재 페이지가 유효한 범위인지 확인
-      const totalPages = Math.max(1, Math.ceil(videos.length / pageSize));
+      const totalPages = Math.max(1, Math.ceil(sortedVideos.length / pageSize));
       setCurrentPage(prev => {
         if (prev > totalPages && totalPages > 0) {
           return 1;
@@ -65,6 +79,7 @@ export default function AdminVideosPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, videos]);
+
 
   const fetchVideos = async () => {
     setIsLoading(true);
@@ -91,40 +106,13 @@ export default function AdminVideosPage() {
         ? "?" + new URLSearchParams(params).toString()
         : "";
       
-      // API 엔드포인트: /videos
-      const url = `${CMS_API_BASE}/videos${queryString}`;
+      // role에 따라 API 엔드포인트 결정
+      const userRole = (currentRole || user?.role || "admin") as "admin" | "creator";
+      const apiPath = getVideosListApiEndpoint(userRole);
+      const endpoint = `${apiPath}${queryString}`;
       
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      // API 오류 처리 (404, 500 등)
-      if (!response.ok) {
-        const status = response.status;
-        const errorText = await response.text();
-        
-        // 콘솔에만 상세 에러 로그
-        console.error(`API Error [${status}]:`, {
-          url,
-          status,
-          statusText: response.statusText,
-          errorText,
-        });
-        
-        // 화면에는 사용자 친화적 메시지만 표시
-        setError("목록을 불러오는 중 오류가 발생했습니다.");
-        
-        // 에러 발생 시에도 이전 값 유지 (빈 배열로 초기화하지 않음)
-        // 단, videos가 아직 초기화되지 않은 경우에만 빈 배열로 설정
-        setVideos((prev) => (Array.isArray(prev) && prev.length > 0 ? prev : []));
-        setFilteredVideos((prev) => (Array.isArray(prev) && prev.length > 0 ? prev : []));
-        setIsLoading(false);
-        return;
-      }
-
-      const data = await response.json();
+      // apiClient를 사용하여 일관된 에러 핸들링
+      const data = await apiGet<any>(endpoint, { auth: true });
       
       // 콘솔에 응답 로그 출력
       console.log('GET /videos 응답:', data);
@@ -146,22 +134,130 @@ export default function AdminVideosPage() {
       
       console.log(`파싱된 영상 개수: ${items.length}개`);
       
+      // 첫 번째 영상 객체의 모든 필드 로그 출력 (출처/관리번호 필드명 확인용)
+      if (items.length > 0) {
+        const firstVideo = items[0];
+        console.log('[영상 리스트] 첫 번째 영상 객체 전체 필드:', firstVideo);
+        console.log('[영상 리스트] 출처 관련 필드:', {
+          sourceType: (firstVideo as any).sourceType,
+          source_type: (firstVideo as any).source_type,
+          source: (firstVideo as any).source,
+          video_type: (firstVideo as any).video_type,
+          videoType: (firstVideo as any).videoType,
+          platform: (firstVideo as any).platform,
+        });
+        console.log('[영상 리스트] 관리번호 관련 필드:', {
+          videoManageNo: (firstVideo as any).videoManageNo,
+          video_manage_no: (firstVideo as any).video_manage_no,
+          manageNo: (firstVideo as any).manageNo,
+          managementNo: (firstVideo as any).managementNo,
+          managementId: (firstVideo as any).managementId,
+          management_no: (firstVideo as any).management_no,
+          managementNumber: (firstVideo as any).managementNumber,
+          management_id: (firstVideo as any).management_id,
+          adminCode: (firstVideo as any).adminCode,
+          code: (firstVideo as any).code,
+          video_code: (firstVideo as any).video_code,
+          adminId: (firstVideo as any).adminId,
+          admin_id: (firstVideo as any).admin_id,
+          // 추가 필드명 확인
+          management_code: (firstVideo as any).management_code,
+          video_management_no: (firstVideo as any).video_management_no,
+          videoManagementNo: (firstVideo as any).videoManagementNo,
+        });
+        console.log('[영상 리스트] 썸네일 관련 필드:', {
+          thumbnailUrl: (firstVideo as any).thumbnailUrl,
+          thumbnail_url: (firstVideo as any).thumbnail_url,
+          thumbnail: (firstVideo as any).thumbnail,
+          thumbnailPath: (firstVideo as any).thumbnailPath,
+          thumbnail_path: (firstVideo as any).thumbnail_path,
+          thumbnailFileUrl: (firstVideo as any).thumbnailFileUrl,
+          thumbnail_file_url: (firstVideo as any).thumbnail_file_url,
+          thumbnailImage: (firstVideo as any).thumbnailImage,
+          thumbnail_image: (firstVideo as any).thumbnail_image,
+        });
+      }
+      
+      // #region agent log - API 응답 후 정렬 전
+      fetch('http://127.0.0.1:7242/ingest/2098aad9-a032-4516-a074-3af41b5bc195',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AdminVideosPage.tsx:fetchVideos',message:'API 응답 후 정렬 전',data:{itemCount:items.length,firstFew:items.slice(0,3).map(v=>({id:v.id,title:v.title?.substring(0,20),manageNo:(v as any).manageNo,managementId:v.managementId}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
+      
       // 성공 시에만 상태 업데이트
       // 빈 배열이어도 정상 응답이므로 상태 업데이트 (화면에 "검색 결과가 없습니다." 표시)
-      setVideos(items);
-      setFilteredVideos(items);
+      
+      // 썸네일 필드명 통일 및 URL 정규화, 관리번호 필드명 표준화
+      const normalizedItems = items.map((item: any) => {
+        // 썸네일 필드명 통일: 다양한 필드명을 확인하여 thumbnailUrl로 통일
+        const rawThumbnailUrl = 
+          item.thumbnailUrl || 
+          item.thumbnail_url || 
+          item.thumbnail ||
+          item.thumbnailPath ||
+          item.thumbnail_path ||
+          item.thumbnailFileUrl ||
+          item.thumbnail_file_url ||
+          item.thumbnailImage ||
+          item.thumbnail_image ||
+          null;
+        const normalizedThumbnailUrl = normalizeThumbnailUrl(rawThumbnailUrl, CMS_API_BASE);
+        
+        // 관리번호 필드명 표준화: 다양한 필드명을 videoManageNo로 통일
+        const rawManageNo = 
+          item.videoManageNo || 
+          item.video_manage_no || 
+          item.videoManagementNo ||
+          item.video_management_no ||
+          item.manageNo || 
+          item.managementNo || 
+          item.managementId || 
+          item.management_no || 
+          item.management_id ||
+          item.managementNumber || 
+          item.management_code ||
+          item.adminCode || 
+          item.code || 
+          item.video_code || 
+          item.adminId || 
+          item.admin_id || 
+          null;
+        
+        return {
+          ...item,
+          thumbnailUrl: normalizedThumbnailUrl,
+          thumbnail_url: normalizedThumbnailUrl, // 하위 호환성
+          videoManageNo: rawManageNo, // 표준 필드명으로 통일
+        };
+      });
+      
+      // 관리번호 기준 내림차순 정렬 (최신 영상이 먼저 오도록)
+      const sortedItems = sortVideosByManagementNumber(normalizedItems);
+      
+      // #region agent log - 정렬 후 상태 업데이트 전
+      fetch('http://127.0.0.1:7242/ingest/2098aad9-a032-4516-a074-3af41b5bc195',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AdminVideosPage.tsx:fetchVideos',message:'정렬 후 상태 업데이트 전',data:{sortedCount:sortedItems.length,firstFew:sortedItems.slice(0,3).map(v=>({id:v.id,title:v.title?.substring(0,20),manageNo:(v as any).manageNo,managementId:v.managementId}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
+      
+      setVideos(sortedItems);
+      setFilteredVideos(sortedItems);
     } catch (err) {
       // 네트워크 오류 등 예외 처리
       console.error("Failed to fetch videos:", err);
+      const error = err as Error & { isNetworkError?: boolean; status?: number };
       
-      // 화면에는 사용자 친화적 메시지만 표시
-      setError("목록을 불러오는 중 오류가 발생했습니다.");
+      // 네트워크 에러 또는 인증 에러 처리
+      if (error.isNetworkError || error.status === 0) {
+        setError("백엔드 서버에 연결할 수 없습니다. 백엔드가 실행 중인지 확인해주세요.");
+      } else if (error.status === 401 || error.status === 403) {
+        setError("인증에 실패했습니다. 다시 로그인해주세요.");
+      } else {
+        setError(error.message || "목록을 불러오는 중 오류가 발생했습니다.");
+      }
       
       // 에러 발생 시에도 이전 값 유지 (빈 배열로 초기화하지 않음)
       // 단, videos가 아직 초기화되지 않은 경우에만 빈 배열로 설정
       setVideos((prev) => (Array.isArray(prev) && prev.length > 0 ? prev : []));
       setFilteredVideos((prev) => (Array.isArray(prev) && prev.length > 0 ? prev : []));
     } finally {
+      // 무한 로딩 방지를 위해 항상 loading을 false로 설정
       setIsLoading(false);
     }
   };
@@ -213,13 +309,18 @@ export default function AdminVideosPage() {
       shareDisplay: updatedVideo.shareDisplay,
     });
 
+    // #region agent log - handleVideoSaved 시작
+    fetch('http://127.0.0.1:7242/ingest/2098aad9-a032-4516-a074-3af41b5bc195',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AdminVideosPage.tsx:handleVideoSaved',message:'영상 저장 후 핸들러 시작',data:{videoId:updatedVideo.id,title:updatedVideo.title?.substring(0,20),manageNo:(updatedVideo as any).manageNo,managementId:updatedVideo.managementId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+    // #endregion
+
     // videos 상태 업데이트
     setVideos((prev) => {
       const safePrev = Array.isArray(prev) ? prev : [];
       const index = safePrev.findIndex((v) => v.id === updatedVideo.id);
+      let updated: Video[];
       if (index >= 0) {
         // 기존 항목 업데이트 (깊은 병합으로 모든 필드 업데이트)
-        const updated = [...safePrev];
+        updated = [...safePrev];
         updated[index] = {
           ...updated[index],
           ...updatedVideo,
@@ -231,37 +332,27 @@ export default function AdminVideosPage() {
           shareCountReal: updatedVideo.shareCountReal ?? updated[index].shareCountReal,
           shareDisplay: updatedVideo.shareDisplay ?? updated[index].shareDisplay,
         };
-        return updated;
       } else {
         // 새 항목이면 추가 (create 모드)
-        return [...safePrev, updatedVideo];
+        updated = [...safePrev, updatedVideo];
       }
+      
+      // #region agent log - videos 상태 업데이트 후 정렬 전
+      fetch('http://127.0.0.1:7242/ingest/2098aad9-a032-4516-a074-3af41b5bc195',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AdminVideosPage.tsx:handleVideoSaved',message:'videos 상태 업데이트 후 정렬 전',data:{totalCount:updated.length,firstFew:updated.slice(0,3).map(v=>({id:v.id,title:v.title?.substring(0,20),manageNo:(v as any).manageNo}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H'})}).catch(()=>{});
+      // #endregion
+      
+      // 관리번호 기준으로 정렬
+      const sorted = sortVideosByManagementNumber(updated);
+      
+      // #region agent log - videos 정렬 후
+      fetch('http://127.0.0.1:7242/ingest/2098aad9-a032-4516-a074-3af41b5bc195',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AdminVideosPage.tsx:handleVideoSaved',message:'videos 정렬 후',data:{totalCount:sorted.length,firstFew:sorted.slice(0,3).map(v=>({id:v.id,title:v.title?.substring(0,20),manageNo:(v as any).manageNo}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
+      // #endregion
+      
+      return sorted;
     });
     
-    // filteredVideos 상태도 업데이트
-    setFilteredVideos((prev) => {
-      const safePrev = Array.isArray(prev) ? prev : [];
-      const index = safePrev.findIndex((v) => v.id === updatedVideo.id);
-      if (index >= 0) {
-        // 기존 항목 업데이트 (깊은 병합으로 모든 필드 업데이트)
-        const updated = [...safePrev];
-        updated[index] = {
-          ...updated[index],
-          ...updatedVideo,
-          // metrics 필드 명시적으로 업데이트
-          viewCountReal: updatedVideo.viewCountReal ?? updated[index].viewCountReal,
-          viewDisplay: updatedVideo.viewDisplay ?? updated[index].viewDisplay,
-          likeCountReal: updatedVideo.likeCountReal ?? updated[index].likeCountReal,
-          likeDisplay: updatedVideo.likeDisplay ?? updated[index].likeDisplay,
-          shareCountReal: updatedVideo.shareCountReal ?? updated[index].shareCountReal,
-          shareDisplay: updatedVideo.shareDisplay ?? updated[index].shareDisplay,
-        };
-        return updated;
-      } else {
-        // 새 항목이면 추가 (create 모드)
-        return [...safePrev, updatedVideo];
-      }
-    });
+    // filteredVideos는 useEffect에서 videos 상태 변경을 감지하여 자동으로 업데이트됨
+    // 따라서 여기서는 별도로 업데이트할 필요 없음
   };
 
   const handleVideoFormSubmit = async (updatedVideo?: Video) => {
@@ -276,7 +367,14 @@ export default function AdminVideosPage() {
   };
 
   const apiDeleteVideo = async (videoId: string): Promise<void> => {
-    const response = await fetch(`${CMS_API_BASE}/admin/videos/${videoId}`, {
+    // role에 따라 API 엔드포인트 결정
+    const userRole = (currentRole || user?.role || "admin") as "admin" | "creator";
+    const apiPath = getVideoDeleteApiEndpoint(userRole, videoId);
+    const endpoint = `${CMS_API_BASE}${apiPath}`;
+    
+    console.log(`[영상 삭제] 요청 URL: ${endpoint}, videoId: ${videoId}, role: ${userRole}`);
+    
+    const response = await fetch(endpoint, {
       method: "DELETE",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -284,16 +382,31 @@ export default function AdminVideosPage() {
     });
 
     if (!response.ok) {
+      const status = response.status;
       const errorText = await response.text();
       let errorMessage = `영상 삭제에 실패했습니다. (ID: ${videoId})`;
+      
       try {
         const errorData = JSON.parse(errorText);
         errorMessage = errorData.message || errorData.error || errorMessage;
       } catch {
         // JSON 파싱 실패 시 기본 메시지 사용
       }
+      
+      // HTTP 상태 코드에 따라 더 정확한 에러 메시지 제공
+      if (status === 403) {
+        errorMessage = `접근 권한이 없습니다. (403 Forbidden)`;
+      } else if (status === 404) {
+        errorMessage = `영상을 찾을 수 없습니다. (404 Not Found)`;
+      } else if (status === 500) {
+        errorMessage = `서버 오류가 발생했습니다. (500 Internal Server Error)`;
+      }
+      
+      console.error(`[영상 삭제 실패] status: ${status}, message: ${errorMessage}`);
       throw new Error(errorMessage);
     }
+    
+    console.log(`[영상 삭제 성공] videoId: ${videoId}`);
   };
 
   const handleDelete = async (videoId: string) => {
@@ -304,7 +417,7 @@ export default function AdminVideosPage() {
     try {
       await apiDeleteVideo(videoId);
 
-      // 성공 시 상태에서 제거 (안전하게 배열 체크)
+      // 성공 시 즉시 UI에서 제거 (빠른 피드백)
       const safeVideos = Array.isArray(videos) ? videos : [];
       const updatedVideos = safeVideos.filter((v) => String(v.id) !== String(videoId));
       setVideos(updatedVideos);
@@ -316,6 +429,12 @@ export default function AdminVideosPage() {
       
       // 선택 목록에서도 제거
       setSelectedIds((prev) => prev.filter((id) => String(id) !== String(videoId)));
+      
+      // 목록 재조회로 최신 상태 동기화 (백그라운드)
+      fetchVideos().catch((err) => {
+        console.warn("삭제 후 목록 재조회 실패 (무시됨):", err);
+        // 재조회 실패해도 UI는 이미 업데이트되었으므로 무시
+      });
     } catch (err) {
       console.error("Failed to delete video:", err);
       const errorMessage = err instanceof Error ? err.message : "삭제에 실패했습니다.";
@@ -360,6 +479,14 @@ export default function AdminVideosPage() {
           return safePrev.filter((v) => !successIds.includes(String(v.id)));
         });
         setSelectedIds((prev) => prev.filter((id) => !successIds.includes(id)));
+      }
+      
+      // 목록 재조회로 최신 상태 동기화 (백그라운드)
+      if (successIds.length > 0) {
+        fetchVideos().catch((err) => {
+          console.warn("대량 삭제 후 목록 재조회 실패 (무시됨):", err);
+          // 재조회 실패해도 UI는 이미 업데이트되었으므로 무시
+        });
       }
     } catch (err) {
       console.error("Failed to delete videos:", err);
@@ -463,7 +590,7 @@ export default function AdminVideosPage() {
     <div className="admin-videos-page">
       {/* 헤더: 제목과 액션 버튼 */}
       <div className="admin-videos-header">
-        <h1 className="admin-videos-page-title">Videos</h1>
+        <h1 className="admin-videos-page-title">{isAdmin ? "Videos" : "My Videos"}</h1>
         <div className="admin-videos-header-actions">
           <button
             className="admin-videos-button admin-videos-button-primary"
@@ -600,89 +727,18 @@ export default function AdminVideosPage() {
                 <label>전체 선택 (현재 페이지)</label>
               </div>
 
-              {pagedVideos.map((video) => {
-              const thumbnailUrl = video.thumbnailUrl || video.thumbnail_url;
-              const creatorName = video.creatorName || video.creator_name || video.creator || "Unknown";
-              // created_at 필드를 우선적으로 사용, 없으면 다른 필드들 확인
-              const uploadDate = (video as any).created_at || video.uploadedAt || video.upload_date || video.createdAt;
-              const viewCountReal = video.viewCountReal ?? 0;
-              const viewDisplay = video.viewDisplay ?? 0;
-              const likeCountReal = video.likeCountReal ?? 0;
-              const likeDisplay = video.likeDisplay ?? 0;
-              const shareCountReal = video.shareCountReal ?? 0;
-              const shareDisplay = video.shareDisplay ?? 0;
-
-              return (
-                <div key={video.id} className="admin-videos-item">
-                  <div className="admin-videos-item-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(String(video.id))}
-                      onChange={(e) => handleToggleSelect(String(video.id), e.target.checked)}
-                      className="admin-videos-checkbox"
-                    />
-                  </div>
-                  <div className="admin-videos-item-thumbnail">
-                    {thumbnailUrl ? (
-                      <img src={thumbnailUrl} alt={video.title} />
-                    ) : (
-                      <div className="admin-videos-thumbnail-placeholder">
-                        <span className="admin-videos-thumbnail-icon">🎬</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="admin-videos-item-content">
-                    <h3 className="admin-videos-item-title">{video.title}</h3>
-                    <div className="admin-videos-item-meta">
-                      {(video.managementId || video.video_code) && (
-                        <span className="admin-videos-item-code" style={{ fontSize: "12px", color: "#666", marginRight: "8px" }}>
-                          영상 관리번호: {video.managementId || video.video_code}
-                        </span>
-                      )}
-                      <span className="admin-videos-item-creator">
-                        크리에이터: {creatorName}
-                      </span>
-                      <span className="admin-videos-item-date">
-                        {uploadDate
-                          ? new Date(uploadDate).toLocaleDateString("ko-KR")
-                          : "날짜 없음"}
-                      </span>
-                    </div>
-                    <div className="admin-videos-item-metrics">
-                      <span className="admin-videos-metric">
-                        조회: 실제 {viewCountReal.toLocaleString()} / 노출 {viewDisplay.toLocaleString()}
-                      </span>
-                      <span className="admin-videos-metric">
-                        좋아요: 실제 {likeCountReal.toLocaleString()} / 노출 {likeDisplay.toLocaleString()}
-                      </span>
-                      <span className="admin-videos-metric">
-                        공유: 실제 {shareCountReal.toLocaleString()} / 노출 {shareDisplay.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="admin-videos-item-actions">
-                    <button
-                      className="admin-videos-action-button admin-videos-action-view"
-                      onClick={() => handleView(video)}
-                    >
-                      보기
-                    </button>
-                    <button
-                      className="admin-videos-action-button admin-videos-action-edit"
-                      onClick={() => handleEditVideo(video)}
-                    >
-                      편집
-                    </button>
-                    <button
-                      className="admin-videos-action-button admin-videos-action-delete"
-                      onClick={() => handleDelete(String(video.id))}
-                    >
-                      삭제
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+              {pagedVideos.map((video) => (
+                <VideoCard
+                  key={video.id}
+                  video={video}
+                  mode={isAdmin ? "admin" : "creator"}
+                  isSelected={selectedIds.includes(String(video.id))}
+                  onSelect={handleToggleSelect}
+                  onView={handleView}
+                  onEdit={handleEditVideo}
+                  onDelete={handleDelete}
+                />
+              ))}
             </div>
             
             {/* 페이지네이션 */}

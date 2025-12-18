@@ -77,27 +77,61 @@ export class DatabaseService implements OnModuleInit {
   /**
    * 사용자 조회 (이메일 기준)
    */
-findUserByEmail(email: string): any {
-  try {
-    const user = this.db
-      .prepare("SELECT * FROM users WHERE email = ? AND status = 'active'")
-      .get(email) as any;   // 👈 여기 캐스팅 추가
+  findUserByEmail(email: string): any {
+    try {
+      const user = this.db
+        .prepare("SELECT * FROM users WHERE email = ? AND status = 'active'")
+        .get(email) as any;
 
-    if (user) {
-      this.logger.debug(
-        `✅ 사용자 발견 (${email}): id=${user.id}, password_hash=${user.password_hash ? 'SET' : 'NULL'}`,
-      );
-    } else {
-      this.logger.debug(`❌ 사용자 없음 (${email})`);
+      if (user) {
+        this.logger.debug(
+          `✅ 사용자 발견 (${email}): id=${user.id}, password_hash=${user.password_hash ? 'SET' : 'NULL'}`,
+        );
+      } else {
+        this.logger.debug(`❌ 사용자 없음 (${email})`);
+      }
+
+      return user;
+    } catch (error) {
+      this.logger.error(`❌ 사용자 조회 DB 에러:`, (error as any).message);
+      this.logger.error('상세 에러:', error);
+      throw error;
     }
-
-    return user;
-  } catch (error) {
-    this.logger.error(`❌ 사용자 조회 DB 에러:`, (error as any).message);
-    this.logger.error('상세 에러:', error);
-    throw error;
   }
-}
+
+  /**
+   * 사용자 조회 (이메일 또는 username 기준)
+   * username은 name 필드에서 검색 (일반적으로 name 필드에 username이 저장됨)
+   */
+  findUserByEmailOrUsername(identifier: string): any {
+    try {
+      // 먼저 email로 검색
+      let user = this.db
+        .prepare("SELECT * FROM users WHERE email = ? AND status = 'active'")
+        .get(identifier) as any;
+
+      // email로 찾지 못하면 name 필드로 검색 (username으로 사용)
+      if (!user) {
+        user = this.db
+          .prepare("SELECT * FROM users WHERE name = ? AND status = 'active'")
+          .get(identifier) as any;
+      }
+
+      if (user) {
+        this.logger.debug(
+          `✅ 사용자 발견 (${identifier}): id=${user.id}, email=${user.email}, name=${user.name}, password_hash=${user.password_hash ? 'SET' : 'NULL'}`,
+        );
+      } else {
+        this.logger.debug(`❌ 사용자 없음 (${identifier})`);
+      }
+
+      return user;
+    } catch (error) {
+      this.logger.error(`❌ 사용자 조회 DB 에러:`, (error as any).message);
+      this.logger.error('상세 에러:', error);
+      throw error;
+    }
+  }
 
   /**
    * 사용자 조회 (ID 기준)
@@ -266,6 +300,22 @@ findUserByEmail(email: string): any {
       this.logger.error(`❌ 이메일 중복 확인 DB 에러:`, error.message);
       this.logger.error('상세 에러:', error);
       throw error;
+    }
+  }
+
+  /**
+   * 비밀번호 검증 (scrypt 사용)
+   * db.js의 verifyPassword와 동일한 로직
+   */
+  verifyPassword(password: string, hash: string, salt: string): boolean {
+    try {
+      const crypto = require('crypto');
+      const { scryptSync } = crypto;
+      const testHash = scryptSync(password, salt, 64).toString('hex');
+      return testHash === hash;
+    } catch (error) {
+      this.logger.error(`❌ 비밀번호 검증 에러:`, error);
+      return false;
     }
   }
 }

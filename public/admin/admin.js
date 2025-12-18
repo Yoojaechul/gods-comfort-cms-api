@@ -74,7 +74,7 @@ function isTokenExpired() {
  * 로그인 페이지로 리다이렉트
  */
 function redirectToLogin() {
-  window.location.href = '/admin/login.html';
+  window.location.href = '/login';
 }
 
 /**
@@ -83,7 +83,7 @@ function redirectToLogin() {
 function logout() {
   if (confirm('로그아웃하시겠습니까?')) {
     clearAuthData();
-    redirectToLogin();
+    window.location.href = '/login';
   }
 }
 

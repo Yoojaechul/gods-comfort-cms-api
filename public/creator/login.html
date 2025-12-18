@@ -1,87 +1,15 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
-<head>
-  <meta charset="UTF-8" />
-  <title>CMS Creator Login</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- 크리에이터 전용 스타일 -->
-  <link rel="stylesheet" href="/creator/login.css" />
-</head>
-<body>
-  <div class="login-page">
-    <div class="login-container">
-      <div class="login-card">
-        <div class="login-header">
-          <h1>🎨 CMS Creator Login</h1>
-          <p>선교홈페이지 크리에이터 로그인</p>
-        </div>
-
-        <div class="form-group">
-          <label for="email">아이디 (ID)</label>
-          <input
-            type="text"
-            id="email"
-            placeholder="아이디를 입력하세요"
-            value="01023942042"
-          />
-        </div>
-
-        <div class="form-group">
-          <label for="password">비밀번호</label>
-          <input
-            type="password"
-            id="password"
-            placeholder="비밀번호를 입력하세요"
-          />
-        </div>
-
-        <p id="errorMessage" class="error-message" style="display:none;">
-          아이디와 비밀번호를 올바르게 입력해주세요.
-        </p>
-
-        <button id="loginButton" class="login-button">
-          로그인
-        </button>
-
-        <p class="help-text">
-          비밀번호를 잊으셨나요? 관리자에게 문의하세요.
-        </p>
-
-        <p class="api-info">
-          NestJS API: <span>localhost:8788</span>
-        </p>
-      </div>
-    </div>
-  </div>
-
-  <!-- 로그인 처리 스크립트 -->
-  <script src="/creator/login.js" 
-          onerror="console.error('[login.html] login.js 로드 실패!'); alert('⚠️ login.js 파일을 로드할 수 없습니다. 서버를 확인해주세요.');"
-          onload="console.log('[login.html] login.js 로드 성공 (200 OK)');">
-  </script>
-  
-  <!-- 스크립트 로드 확인 -->
-  <script>
-    // login.js가 실제로 로드되었는지 확인
-    window.addEventListener('load', () => {
-      setTimeout(() => {
-        // login.js에서 정의된 함수나 변수가 있는지 확인
-        if (typeof NEST_API_BASE === 'undefined') {
-          console.error('[login.html] login.js가 로드되지 않았습니다!');
-          const errorMsg = document.getElementById('errorMessage');
-          if (errorMsg) {
-            errorMsg.textContent = '⚠️ 로그인 스크립트를 로드할 수 없습니다. 페이지를 새로고침해주세요.';
-            errorMsg.style.display = 'block';
-            errorMsg.style.background = '#fee';
-            errorMsg.style.color = '#c53030';
-            errorMsg.style.border = '2px solid #fc8181';
-          }
-        } else {
-          console.log('[login.html] login.js 로드 확인 완료 - NEST_API_BASE:', NEST_API_BASE);
-        }
-      }, 100);
-    });
-  </script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <title>로그인 페이지 변경 안내</title>
+    <script>
+      // 이 페이지는 더 이상 사용하지 않습니다.
+      // 새 CMS 로그인 페이지로 자동 이동
+      window.location.href = "http://localhost:5173/login";
+    </script>
+  </head>
+  <body>
+    <p>이 페이지는 더 이상 사용하지 않습니다. 잠시 후 새 CMS 로그인 페이지로 이동합니다.</p>
+  </body>
 </html>
-

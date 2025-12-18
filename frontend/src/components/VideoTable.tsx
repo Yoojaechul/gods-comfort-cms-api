@@ -1,5 +1,8 @@
 import { useState } from "react";
 import VideoPreviewModal from "./VideoPreviewModal";
+import { CMS_API_BASE } from "../config";
+import { normalizeThumbnailUrl } from "../utils/videoMetadata";
+import { getRealPlaybackCount } from "../utils/videoMetrics";
 
 interface Video {
   id: string;
@@ -55,9 +58,32 @@ export default function VideoTable({
   };
 
   const getThumbnailUrl = (video: Video) => {
+    // 썸네일 URL이 있으면 우선 사용 (Facebook/YouTube 구분 없이)
+    const rawThumbnailUrl = 
+      (video as any).thumbnailUrl || 
+      (video as any).thumbnail_url || 
+      (video as any).thumbnail ||
+      (video as any).thumbnailPath ||
+      (video as any).thumbnail_path ||
+      (video as any).thumbnailFileUrl ||
+      (video as any).thumbnail_file_url ||
+      (video as any).thumbnailImage ||
+      (video as any).thumbnail_image ||
+      null;
+    
+    // normalizeThumbnailUrl로 정규화 (상대경로를 절대경로로 변환)
+    const normalizedThumbnailUrl = normalizeThumbnailUrl(rawThumbnailUrl, CMS_API_BASE);
+    
+    if (normalizedThumbnailUrl) {
+      return normalizedThumbnailUrl;
+    }
+    
+    // YouTube인 경우 기본 썸네일 생성
     if (video.video_type === "youtube" && video.youtube_id) {
       return `https://img.youtube.com/vi/${video.youtube_id}/hqdefault.jpg`;
     }
+    
+    // 썸네일이 없으면 placeholder
     return "/placeholder-video.jpg";
   };
 
@@ -91,6 +117,9 @@ export default function VideoTable({
                 조회수
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                영상 관리번호
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                 등록일
               </th>
             </tr>
@@ -98,52 +127,81 @@ export default function VideoTable({
           <tbody className="bg-white divide-y divide-gray-200">
             {videos.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                   등록된 영상이 없습니다.
                 </td>
               </tr>
             ) : (
-              videos.map((video) => (
-                <tr key={video.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <input
-                      type="checkbox"
-                      checked={selectedVideos.includes(video.id)}
-                      onChange={(e) => handleSelectOne(video.id, e.target.checked)}
-                      className="rounded border-gray-300"
-                    />
-                  </td>
-                  <td className="px-6 py-4">
-                    <div
-                      className="relative w-32 h-20 cursor-pointer group"
-                      onClick={() => setPreviewVideo(video)}
-                    >
-                      <img
-                        src={getThumbnailUrl(video)}
-                        alt={video.title}
-                        className="w-full h-full object-cover rounded transition-transform group-hover:scale-105"
+              videos.map((video) => {
+                // 관리번호 가져오기 (표준 필드명 videoManageNo 우선, 기존 필드명들도 지원)
+                const getManagementNo = (): string => {
+                  const candidates = [
+                    (video as any).videoManageNo,  // 최우선 (표준 필드명, AdminVideosPage에서 정규화됨)
+                    (video as any).video_manage_no,  // snake_case 버전
+                    (video as any).videoManagementNo,  // camelCase 버전
+                    (video as any).video_management_no,  // snake_case 버전
+                    (video as any).manageNo,
+                    (video as any).managementNo,
+                    (video as any).managementId,
+                    (video as any).management_no,
+                    (video as any).management_id,
+                    (video as any).managementNumber,
+                    (video as any).management_code,
+                    (video as any).adminCode,
+                    (video as any).code,
+                    (video as any).video_code,
+                    (video as any).adminId,
+                    (video as any).admin_id,
+                  ];
+                  const found = candidates.find(v => v !== null && v !== undefined && String(v).trim() !== "");
+                  return found ? String(found) : "-";
+                };
+                
+                return (
+                  <tr key={video.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedVideos.includes(video.id)}
+                        onChange={(e) => handleSelectOne(video.id, e.target.checked)}
+                        className="rounded border-gray-300"
                       />
-                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity rounded" />
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <p className="text-sm font-medium text-gray-900">{video.title}</p>
-                    {video.description && (
-                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                        {video.description}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">{video.language}</td>
-                  <td className="px-6 py-4 text-sm text-gray-500">{video.video_type}</td>
-                  <td className="px-6 py-4 text-sm text-gray-900">
-                    {video.views_display?.toLocaleString() || 0}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                    {new Date(video.created_at).toLocaleDateString()}
-                  </td>
-                </tr>
-              ))
+                    </td>
+                    <td className="px-6 py-4">
+                      <div
+                        className="relative w-32 h-20 cursor-pointer group"
+                        onClick={() => setPreviewVideo(video)}
+                      >
+                        <img
+                          src={getThumbnailUrl(video)}
+                          alt={video.title}
+                          className="w-full h-full object-cover rounded transition-transform group-hover:scale-105"
+                        />
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity rounded" />
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-medium text-gray-900">{video.title}</p>
+                      {video.description && (
+                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                          {video.description}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{video.language}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{video.video_type}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      {getRealPlaybackCount(video).toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500 font-mono">
+                      {getManagementNo()}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {new Date(video.created_at).toLocaleDateString()}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -161,6 +219,58 @@ export default function VideoTable({
     </>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

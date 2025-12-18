@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CMS_API_BASE } from "../config";
 import { useAuth } from "../contexts/AuthContext";
+import { formatDateTimeKST } from "../utils/date";
 import "../styles/admin-common.css";
 
 interface Creator {
@@ -10,7 +11,8 @@ interface Creator {
   email: string | null;
   role: string;
   status: string;
-  facebook_key: string | null;
+  facebookKey: string | null;
+  facebook_key?: string | null; // 백엔드 호환성을 위한 옵셔널 필드
   created_at: string;
 }
 
@@ -25,7 +27,7 @@ export default function AdminCreatorsPage() {
     name: "",
     email: "",
     site_url: "",
-    facebook_key: "",
+    facebookKey: "",
   });
 
   useEffect(() => {
@@ -35,25 +37,68 @@ export default function AdminCreatorsPage() {
   const fetchCreators = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${CMS_API_BASE}/admin/creators`, {
+      setError(null);
+      
+      // 여러 엔드포인트를 순차적으로 시도
+      const endpoints = ["/creators", "/admin/creators"];
+      let creatorsData: Creator[] = [];
+      let lastError: Error | null = null;
+      
+      for (const endpoint of endpoints) {
+        try {
+          const response = await fetch(`${CMS_API_BASE}${endpoint}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
 
-      if (!response.ok) {
-        throw new Error("크리에이터 목록을 불러오는데 실패했습니다.");
-      }
-
+          if (response.ok) {
       const data = await response.json();
-      if (data.success && data.data && data.data.creators) {
-        setCreators(data.data.creators || []);
-      } else {
-        setCreators([]);
+            // 응답 구조에 따라 데이터 추출
+            if (Array.isArray(data)) {
+              creatorsData = data;
+            } else if (data.success && data.data && data.data.creators) {
+              creatorsData = data.data.creators || [];
+            } else if (data.creators) {
+              creatorsData = data.creators || [];
+            } else if (data.data) {
+              creatorsData = Array.isArray(data.data) ? data.data : [];
+            }
+            // facebook_key를 facebookKey로 변환 (백엔드 호환성)
+            creatorsData = creatorsData.map((creator: any) => ({
+              ...creator,
+              facebookKey: creator.facebookKey || creator.facebook_key || null,
+            }));
+            setCreators(creatorsData);
+            break; // 성공하면 루프 종료
+          } else if (response.status === 404) {
+            // 404면 다음 엔드포인트 시도
+            continue;
+          } else {
+            // 404가 아닌 다른 에러면 상세 정보 수집
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(`HTTP ${response.status}: ${errorData.message || errorData.error || response.statusText}`);
+          }
+        } catch (err) {
+          lastError = err as Error;
+          // 404가 아닌 다른 에러면 다음 엔드포인트 시도하지 않음
+          if (err instanceof Error && !err.message.includes("404") && !err.message.includes("not found")) {
+            break;
+          }
+          continue;
+        }
+      }
+      
+      if (creatorsData.length === 0 && lastError) {
+        throw lastError;
       }
     } catch (err) {
       console.error("Failed to fetch creators:", err);
-      setError(err instanceof Error ? err.message : "크리에이터 목록을 불러오는데 실패했습니다.");
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : "크리에이터 목록을 불러오는데 실패했습니다.";
+      setError(errorMessage);
+      setCreators([]);
     } finally {
       setLoading(false);
     }
@@ -65,7 +110,7 @@ export default function AdminCreatorsPage() {
       name: "",
       email: "",
       site_url: "",
-      facebook_key: "",
+      facebookKey: "",
     });
     setShowForm(true);
   };
@@ -76,7 +121,7 @@ export default function AdminCreatorsPage() {
       name: creator.name || "",
       email: creator.email || "",
       site_url: creator.site_url || "",
-      facebook_key: creator.facebook_key || "",
+      facebookKey: creator.facebookKey || (creator as any).facebook_key || "",
     });
     setShowForm(true);
   };
@@ -85,43 +130,117 @@ export default function AdminCreatorsPage() {
     e.preventDefault();
     try {
       if (editingCreator) {
-        // 수정
-        const response = await fetch(`${CMS_API_BASE}/admin/creators/${editingCreator.id}`, {
-          method: "PUT",
+        // 수정 - 여러 엔드포인트와 메서드를 순차적으로 시도
+        const endpoints = ["/creators", "/admin/creators"];
+        const methods = ["PATCH", "PUT"]; // PATCH를 먼저 시도 (일반적으로 PATCH가 더 많이 사용됨)
+        let success = false;
+        let lastError: Error | null = null;
+        
+        const payload = {
+          name: formData.name,
+          site_url: formData.site_url || null,
+          facebookKey: formData.facebookKey || null,
+        };
+        
+        for (const endpoint of endpoints) {
+          for (const method of methods) {
+            try {
+              const response = await fetch(`${CMS_API_BASE}${endpoint}/${editingCreator.id}`, {
+                method,
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({
-            name: formData.name,
-            site_url: formData.site_url || null,
-            facebook_key: formData.facebook_key || null,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || "크리에이터 수정에 실패했습니다.");
+                body: JSON.stringify(payload),
+              });
+              
+              if (response.ok) {
+                success = true;
+                break; // 성공하면 루프 종료
+              } else if (response.status === 404) {
+                // 404면 다음 메서드/엔드포인트 시도
+                continue;
+              } else {
+                // 404가 아닌 다른 에러면 상세 정보 수집
+                const errorData = await response.json().catch(() => ({}));
+                const errorMessage = errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+                lastError = new Error(errorMessage);
+                // 404가 아닌 에러면 다음 메서드 시도
+                continue;
+              }
+            } catch (err) {
+              lastError = err as Error;
+              // 404가 아닌 다른 에러면 다음 메서드 시도
+              if (err instanceof Error && !err.message.includes("404") && !err.message.includes("not found")) {
+                continue;
+              }
+              continue;
+            }
+          }
+          if (success) break; // 성공하면 외부 루프도 종료
+        }
+        
+        if (!success) {
+          throw lastError || new Error("크리에이터 수정에 실패했습니다. 모든 엔드포인트를 시도했지만 실패했습니다.");
         }
       } else {
         // 생성
-        const response = await fetch(`${CMS_API_BASE}/admin/creators`, {
+        // site_id 가져오기 (localStorage 우선, 없으면 null)
+        const storedSiteId = localStorage.getItem("site_id");
+        const siteIdValue = storedSiteId ? parseInt(storedSiteId, 10) : null;
+        
+        // 여러 엔드포인트를 순차적으로 시도
+        const endpoints = ["/creators", "/admin/creators"];
+        let success = false;
+        let lastError: Error | null = null;
+        
+        const payload: any = {
+          site_url: formData.site_url || null,
+          name: formData.name,
+          email: formData.email || null,
+          facebookKey: formData.facebookKey || null,
+        };
+        
+        // site_id가 있으면 포함
+        if (siteIdValue && !isNaN(siteIdValue)) {
+          payload.site_id = siteIdValue;
+        }
+        
+        for (const endpoint of endpoints) {
+          try {
+            const response = await fetch(`${CMS_API_BASE}${endpoint}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({
-            site_url: formData.site_url || null,
-            name: formData.name,
-            email: formData.email || null,
-            facebook_key: formData.facebook_key || null,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || "크리에이터 생성에 실패했습니다.");
+              body: JSON.stringify(payload),
+            });
+            
+            if (response.ok) {
+              success = true;
+              break; // 성공하면 루프 종료
+            } else if (response.status === 404) {
+              // 404면 다음 엔드포인트 시도
+              continue;
+            } else {
+              // 404가 아닌 다른 에러면 상세 정보 수집
+              const errorData = await response.json().catch(() => ({}));
+              const errorMessage = errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+              throw new Error(errorMessage);
+            }
+          } catch (err) {
+            lastError = err as Error;
+            // 404가 아닌 다른 에러면 다음 엔드포인트 시도하지 않음
+            if (err instanceof Error && !err.message.includes("404") && !err.message.includes("not found")) {
+              break;
+            }
+            continue;
+          }
+        }
+        
+        if (!success) {
+          throw lastError || new Error("크리에이터 생성에 실패했습니다. 모든 엔드포인트를 시도했지만 실패했습니다.");
         }
       }
 
@@ -148,8 +267,9 @@ export default function AdminCreatorsPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "크리에이터 삭제에 실패했습니다.");
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+        throw new Error(errorMessage);
       }
 
       fetchCreators();
@@ -278,8 +398,8 @@ export default function AdminCreatorsPage() {
                 <label style={{ display: "block", marginBottom: "4px", fontWeight: 500 }}>Facebook Key</label>
                 <input
                   type="text"
-                  value={formData.facebook_key}
-                  onChange={(e) => setFormData({ ...formData, facebook_key: e.target.value })}
+                  value={formData.facebookKey}
+                  onChange={(e) => setFormData({ ...formData, facebookKey: e.target.value })}
                   placeholder="Facebook Access Token 또는 Key"
                   style={{
                     width: "100%",
@@ -362,18 +482,21 @@ export default function AdminCreatorsPage() {
                     </span>
                   </td>
                   <td style={{ padding: "12px" }}>
-                    {creator.facebook_key ? (
+                    {(creator.facebookKey || (creator as any).facebook_key) ? (
                       <span style={{ fontFamily: "monospace", fontSize: "12px" }}>
-                        {creator.facebook_key.length > 20
-                          ? `${creator.facebook_key.substring(0, 20)}...`
-                          : creator.facebook_key}
+                        {(() => {
+                          const key = creator.facebookKey || (creator as any).facebook_key || "";
+                          return key.length > 20
+                            ? `${key.substring(0, 20)}...`
+                            : key;
+                        })()}
                       </span>
                     ) : (
                       "-"
                     )}
                   </td>
                   <td style={{ padding: "12px" }}>
-                    {new Date(creator.created_at).toLocaleDateString("ko-KR")}
+                    {formatDateTimeKST(creator.created_at)}
                   </td>
                   <td style={{ padding: "12px" }}>
                     <button

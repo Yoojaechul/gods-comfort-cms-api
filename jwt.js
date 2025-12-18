@@ -19,9 +19,28 @@ export function generateToken(user) {
 
 // JWT 토큰 검증
 export function verifyToken(token) {
+  if (!token || typeof token !== 'string') {
+    return null;
+  }
+
   try {
-    return jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return decoded;
   } catch (err) {
+    // JWT_SECRET 불일치 가능성 로깅
+    if (err.name === 'JsonWebTokenError') {
+      console.warn(`[verifyToken] JWT 검증 실패 - ${err.message}`);
+      if (err.message.includes('secret') || err.message.includes('signature')) {
+        console.error(`[verifyToken] ⚠️  JWT_SECRET 불일치 가능성 - 토큰 서명 검증 실패`);
+        console.error(`[verifyToken] 현재 JWT_SECRET: ${JWT_SECRET ? JWT_SECRET.substring(0, 10) + '...' : 'undefined'}`);
+      }
+    } else if (err.name === 'TokenExpiredError') {
+      console.warn(`[verifyToken] 토큰 만료 - ${err.message}`);
+    } else if (err.name === 'NotBeforeError') {
+      console.warn(`[verifyToken] 토큰이 아직 유효하지 않음 - ${err.message}`);
+    } else {
+      console.warn(`[verifyToken] 토큰 검증 오류 - ${err.name}: ${err.message}`);
+    }
     return null;
   }
 }
@@ -35,6 +54,58 @@ export function getTokenExpiry(token) {
     return null;
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

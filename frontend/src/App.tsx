@@ -2,13 +2,12 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
 import LoginPage from "./pages/LoginPage";
 import AdminDashboard from "./pages/AdminDashboard";
-import CreatorDashboard from "./pages/CreatorDashboard";
-import VideosPage from "./pages/VideosPage";
 import AdminVideosPage from "./pages/AdminVideosPage";
 import AdminCreatorsPage from "./pages/AdminCreatorsPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
 import FacebookKeysPage from "./pages/FacebookKeysPage";
+import CreatorMyVideosPage from "./pages/CreatorMyVideosPage";
 import AdminDashboardLayout from "./components/AdminDashboardLayout";
 import CreatorDashboardLayout from "./components/CreatorDashboardLayout";
 
@@ -29,7 +28,14 @@ function ProtectedRoute({
     return <Navigate to="/login" replace />;
   }
 
+  // 권한 체크: roles가 지정된 경우 해당 역할만 허용
   if (roles && !roles.includes(user.role)) {
+    // 권한이 없으면 role에 맞는 기본 페이지로 리다이렉트
+    if (user.role === "admin") {
+      return <Navigate to="/admin/videos" replace />;
+    } else if (user.role === "creator") {
+      return <Navigate to="/creator/my-videos" replace />;
+    }
     return <Navigate to="/login" replace />;
   }
 
@@ -49,7 +55,8 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<AdminDashboard />} />
+        <Route path="dashboard" element={<AdminDashboard />} />
+        <Route index element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="videos" element={<AdminVideosPage />} />
         <Route path="creators" element={<AdminCreatorsPage />} />
         <Route path="users" element={<AdminUsersPage />} />
@@ -64,12 +71,8 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<CreatorDashboard />} />
-        <Route path="videos" element={<VideosPage />} />
-        <Route path="upload" element={<div className="dashboard-card"><h2 className="dashboard-card-title">Upload</h2><p>Upload 페이지 (구현 예정)</p></div>} />
-        <Route path="drafts" element={<div className="dashboard-card"><h2 className="dashboard-card-title">Drafts</h2><p>Drafts 페이지 (구현 예정)</p></div>} />
-        <Route path="analytics" element={<div className="dashboard-card"><h2 className="dashboard-card-title">Analytics</h2><p>Analytics 페이지 (구현 예정)</p></div>} />
-        <Route path="profile" element={<div className="dashboard-card"><h2 className="dashboard-card-title">Profile</h2><p>Profile 페이지 (구현 예정)</p></div>} />
+        <Route path="my-videos" element={<CreatorMyVideosPage />} />
+        <Route index element={<Navigate to="/creator/my-videos" replace />} />
         <Route path="facebook-keys" element={<FacebookKeysPage />} />
       </Route>
 

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { CMS_API_BASE } from "../config";
 import { useAuth } from "../contexts/AuthContext";
+import { apiGet } from "../lib/apiClient";
+import { formatDateTimeKST } from "../utils/date";
 import "../styles/admin-common.css";
 
 interface DashboardSummary {
@@ -25,17 +26,7 @@ export default function AdminDashboard() {
     const fetchSummary = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`${CMS_API_BASE}/admin/dashboard/summary`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error("대시보드 데이터를 불러오는데 실패했습니다.");
-        }
-
-        const data = await response.json();
+        const data = await apiGet<DashboardSummary>("/admin/dashboard/summary", { auth: true });
         setSummary(data);
       } catch (err) {
         console.error("Failed to fetch dashboard summary:", err);
@@ -105,7 +96,7 @@ export default function AdminDashboard() {
                 <tr key={video.id}>
                   <td>{video.title}</td>
                   <td>{video.creatorName}</td>
-                  <td>{new Date(video.createdAt).toLocaleDateString("ko-KR")}</td>
+                  <td>{formatDateTimeKST(video.createdAt)}</td>
                 </tr>
               ))}
             </tbody>

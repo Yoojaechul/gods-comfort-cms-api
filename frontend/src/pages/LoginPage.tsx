@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { CMS_API_BASE } from "../config";
+import { apiPost } from "../lib/apiClient";
 import "../styles/login.css";
 
 export default function LoginPage() {
@@ -31,9 +31,9 @@ export default function LoginPage() {
   useEffect(() => {
     if (user) {
       if (user.role === "admin") {
-        navigate("/admin", { replace: true });
+        navigate("/admin/videos", { replace: true });
       } else if (user.role === "creator") {
-        navigate("/creator", { replace: true });
+        navigate("/creator/my-videos", { replace: true });
       }
     }
   }, [user, navigate]);
@@ -47,9 +47,9 @@ export default function LoginPage() {
       const loggedInUser = await login(id, password);
 
       if (loggedInUser.role === "admin") {
-        navigate("/admin", { replace: true });
+        navigate("/admin/videos", { replace: true });
       } else if (loggedInUser.role === "creator") {
-        navigate("/creator", { replace: true });
+        navigate("/creator/my-videos", { replace: true });
       }
     } catch (err: any) {
       setError(err.message || "로그인에 실패했습니다.");
@@ -86,22 +86,15 @@ export default function LoginPage() {
     setChangingPassword(true);
 
     try {
-      const response = await fetch(`${CMS_API_BASE}/auth/change-password-public`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+      await apiPost(
+        "/auth/change-password-public",
+        {
           email: changeId,
           currentPassword,
           newPassword,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || errorData.error || "비밀번호 변경에 실패했습니다.");
-      }
+        },
+        { auth: false }
+      );
 
       setChangePasswordSuccess("비밀번호가 변경되었습니다.");
       // 성공 후 폼 초기화 및 패널 닫기
@@ -315,6 +308,11 @@ export default function LoginPage() {
     </div>
   );
 }
+
+
+
+
+
 
 
 

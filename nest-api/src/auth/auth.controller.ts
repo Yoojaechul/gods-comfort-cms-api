@@ -8,6 +8,7 @@ import {
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { SetupPasswordDto } from './dto/setup-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @ApiTags('auth')
@@ -115,7 +116,40 @@ export class AuthController {
       site_id: req.user.site_id || null,
     };
   }
+
+  /**
+   * 비밀번호 변경
+   */
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '비밀번호 변경' })
+  @ApiResponse({
+    status: 200,
+    description: '비밀번호 변경 성공',
+    schema: {
+      example: {
+        success: true,
+        message: '비밀번호가 성공적으로 변경되었습니다.',
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: '현재 비밀번호가 올바르지 않음' })
+  @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
+  async changePassword(
+    @Body() changePasswordDto: ChangePasswordDto,
+    @Request() req: any,
+  ) {
+    return this.authService.changePassword(
+      req.user.id,
+      changePasswordDto.current_password,
+      changePasswordDto.new_password,
+    );
+  }
 }
+
+
+
 
 
 

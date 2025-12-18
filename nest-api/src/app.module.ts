@@ -5,6 +5,7 @@ import { DatabaseModule } from './database/database.module';
 import { VideosModule } from './videos/videos.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { FacebookKeyModule } from './facebook-key/facebook-key.module';
+import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
   imports: [
@@ -23,6 +24,8 @@ import { FacebookKeyModule } from './facebook-key/facebook-key.module';
     AnalyticsModule,
     // Facebook Key 모듈
     FacebookKeyModule,
+    // 업로드 모듈
+    UploadsModule,
   ],
 })
 export class AppModule {}

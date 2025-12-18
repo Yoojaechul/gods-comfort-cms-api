@@ -299,8 +299,71 @@
   </div>
 
   <script>
-    const PUBLIC_API_BASE = "http://localhost:8788";
+    const PUBLIC_API_BASE = "http://localhost:8787";
     let currentVideos = []; // 전역 영상 목록
+
+    // ============================
+    // 조회수 증가(세션당 1회) 로직
+    // - 영상이 "최초 재생(사용자 클릭으로 모달 오픈 → autoplay)"될 때만 호출
+    // - 새로고침(F5)에도 중복 증가 방지: sessionStorage 사용
+    // ============================
+    const VIEW_SESSION_KEY_PREFIX = "viewed_video:";
+    const viewedVideoIdsInMemory = new Set();
+    const viewedVideoIdsInFlight = new Set();
+
+    function getViewSessionKey(videoId) {
+      return `${VIEW_SESSION_KEY_PREFIX}${videoId}`;
+    }
+
+    function hasViewedInThisSession(videoId) {
+      if (!videoId) return true;
+      if (viewedVideoIdsInMemory.has(videoId)) return true;
+      if (viewedVideoIdsInFlight.has(videoId)) return true;
+      try {
+        return sessionStorage.getItem(getViewSessionKey(videoId)) === "1";
+      } catch (e) {
+        // sessionStorage 접근이 막힌 환경(특정 브라우저 설정 등)에서는
+        // 같은 탭 내에서만이라도 중복 호출을 막기 위해 in-memory Set만 사용
+        return false;
+      }
+    }
+
+    function markViewedInThisSession(videoId) {
+      if (!videoId) return;
+      viewedVideoIdsInMemory.add(videoId);
+      viewedVideoIdsInFlight.delete(videoId);
+      try {
+        sessionStorage.setItem(getViewSessionKey(videoId), "1");
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    async function incrementViewCountOnce(videoId) {
+      if (!videoId) return;
+      if (hasViewedInThisSession(videoId)) return;
+
+      const url = `${PUBLIC_API_BASE}/public/videos/${encodeURIComponent(videoId)}/view`;
+      try {
+        // 응답이 오기 전 중복 클릭으로 같은 영상이 여러 번 증가되지 않도록 inFlight로 잠금
+        viewedVideoIdsInFlight.add(videoId);
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+
+        if (res.ok) {
+          markViewedInThisSession(videoId);
+        } else {
+          viewedVideoIdsInFlight.delete(videoId);
+          console.warn("[view] 조회수 증가 실패:", { videoId, status: res.status, url });
+        }
+      } catch (err) {
+        viewedVideoIdsInFlight.delete(videoId);
+        console.warn("[view] 조회수 증가 네트워크 오류:", { videoId, url, err });
+      }
+    }
 
     function createVideoCard(video) {
       const card = document.createElement("div");
@@ -434,6 +497,9 @@
       }
 
       console.log('[openVideoModal] 모달 열기:', video);
+      // 영상이 최초 1회 재생될 때만 조회수 증가 API 호출
+      // (모달 오픈 시 iframe autoplay=1로 즉시 재생되는 구조)
+      incrementViewCountOnce(video.id);
       inner.innerHTML = getVideoEmbedHtml(video);
       modal.classList.remove('hidden');
     }
