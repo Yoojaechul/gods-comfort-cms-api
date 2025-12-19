@@ -115,3 +115,4 @@ export async function uploadThumbnail(
     isFormData: true,
   });
 }
+

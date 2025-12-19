@@ -51,7 +51,26 @@ export class AuthController {
   })
   @ApiResponse({ status: 401, description: '잘못된 사용자명 또는 비밀번호' })
   async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+    try {
+      console.log('[POST /auth/login] 요청 수신:', { 
+        email: loginDto.email, 
+        username: loginDto.username,
+        hasPassword: !!loginDto.password 
+      });
+      
+      const result = await this.authService.login(loginDto);
+      
+      console.log('[POST /auth/login] 로그인 성공:', { 
+        userId: result.user?.id, 
+        role: result.user?.role 
+      });
+      
+      return result;
+    } catch (error) {
+      // 에러를 다시 throw하여 Exception Filter가 처리하도록 함
+      console.error('[POST /auth/login] 에러 발생:', error);
+      throw error;
+    }
   }
 
   /**

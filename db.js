@@ -7,7 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // 환경변수에서 DB 경로 가져오기 (없으면 기본값)
-const dbPath = process.env.SQLITE_DB_PATH || path.join(__dirname, "cms.db");
+const dbPath =
+  process.env.SQLITE_DB_PATH || path.join("/tmp", "cms.db");
 
 // better-sqlite3로 DB 열기 (동기 방식)
 const db = new Database(dbPath);
