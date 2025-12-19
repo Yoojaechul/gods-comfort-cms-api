@@ -25,3 +25,7 @@ steps:
 
 images:
   - "gcr.io/esoteric-throne-471613-j6/cms-api:$COMMIT_SHA"
+
+timeout: "1200s"
+options:
+  logging: CLOUD_LOGGING_ONLY
