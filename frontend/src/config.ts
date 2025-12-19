@@ -1,21 +1,11 @@
-/**
- * CMS API 기본 URL 설정
- * 운영(Firebase)에서는 반드시 VITE_CMS_API_BASE_URL 사용
- */
+// frontend/src/config.ts
+export const CMS_API_BASE = (import.meta.env.VITE_CMS_API_BASE_URL || "").replace(/\/+$/, "");
 
-// 운영용 API Base (fallback 금지)
-export const CMS_API_BASE = (() => {
-  const url = import.meta.env.VITE_CMS_API_BASE_URL;
+// 필요하면 다른 값들도 유지
+export const FIREBASE_API_KEY = import.meta.env.VITE_FIREBASE_API_KEY;
+export const FIREBASE_AUTH_DOMAIN = import.meta.env.VITE_FIREBASE_AUTH_DOMAIN;
+export const FIREBASE_PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+export const FIREBASE_APP_ID = import.meta.env.VITE_FIREBASE_APP_ID;
 
-  if (!url) {
-    throw new Error(
-      "[config.ts] VITE_CMS_API_BASE_URL is not defined. " +
-        "운영 환경에서는 반드시 frontend/.env.production에 설정되어야 합니다."
-    );
-  }
-
-  return url.endsWith("/") ? url.slice(0, -1) : url;
-})();
-
-// (선택) 홈 URL
-export const HOME_URL = (import.meta.env.VITE_HOME_URL || "").trim();
+// 배포 확인용(나중에 제거 가능)
+console.log("[config] CMS_API_BASE =", CMS_API_BASE);
