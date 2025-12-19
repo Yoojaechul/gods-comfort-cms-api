@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { CMS_API_BASE } from "../config";
 import { useAuth } from "../contexts/AuthContext";
-import { apiGet } from "../lib/apiClient";
+import { apiGet, apiDelete } from "../lib/apiClient";
 import type { Video } from "../types/video";
 import VideoFormModal from "../components/admin/VideoFormModal";
 import BulkVideosModal from "../components/admin/BulkVideosModal";
@@ -370,28 +370,15 @@ export default function AdminVideosPage({ role = "admin" }: VideosPageProps) {
     // role에 따라 API 엔드포인트 결정
     const userRole = (currentRole || user?.role || "admin") as "admin" | "creator";
     const apiPath = getVideoDeleteApiEndpoint(userRole, videoId);
-    const endpoint = `${CMS_API_BASE}${apiPath}`;
     
-    console.log(`[영상 삭제] 요청 URL: ${endpoint}, videoId: ${videoId}, role: ${userRole}`);
+    console.log(`[영상 삭제] 요청 URL: ${CMS_API_BASE}${apiPath}, videoId: ${videoId}, role: ${userRole}`);
     
-    const response = await fetch(endpoint, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    if (!response.ok) {
-      const status = response.status;
-      const errorText = await response.text();
+    try {
+      await apiDelete(apiPath, { auth: true });
+      console.log(`[영상 삭제 성공] videoId: ${videoId}`);
+    } catch (error: any) {
+      const status = error.status;
       let errorMessage = `영상 삭제에 실패했습니다. (ID: ${videoId})`;
-      
-      try {
-        const errorData = JSON.parse(errorText);
-        errorMessage = errorData.message || errorData.error || errorMessage;
-      } catch {
-        // JSON 파싱 실패 시 기본 메시지 사용
-      }
       
       // HTTP 상태 코드에 따라 더 정확한 에러 메시지 제공
       if (status === 403) {
@@ -400,13 +387,13 @@ export default function AdminVideosPage({ role = "admin" }: VideosPageProps) {
         errorMessage = `영상을 찾을 수 없습니다. (404 Not Found)`;
       } else if (status === 500) {
         errorMessage = `서버 오류가 발생했습니다. (500 Internal Server Error)`;
+      } else if (error.message) {
+        errorMessage = error.message;
       }
       
       console.error(`[영상 삭제 실패] status: ${status}, message: ${errorMessage}`);
       throw new Error(errorMessage);
     }
-    
-    console.log(`[영상 삭제 성공] videoId: ${videoId}`);
   };
 
   const handleDelete = async (videoId: string) => {

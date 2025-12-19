@@ -1,13 +1,9 @@
 {
   "functions": [
     {
-      "codebase": "default",
-      "source": "functions",
-      "runtime": "nodejs18"
-    },
-    {
       "source": "cms",
       "codebase": "cms",
+      "runtime": "nodejs20",
       "disallowLegacyRuntimeConfig": true,
       "ignore": [
         "node_modules",
@@ -41,3 +37,4 @@
     ]
   }
 }
+

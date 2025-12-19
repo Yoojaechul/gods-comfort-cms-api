@@ -31,9 +31,11 @@ function ProtectedRoute({
   // 권한 체크: roles가 지정된 경우 해당 역할만 허용
   if (roles && !roles.includes(user.role)) {
     // 권한이 없으면 role에 맞는 기본 페이지로 리다이렉트
+    // creator가 admin 접근 시 차단하고 creator 페이지로 이동
     if (user.role === "admin") {
-      return <Navigate to="/admin/videos" replace />;
+      return <Navigate to="/admin/dashboard" replace />;
     } else if (user.role === "creator") {
+      // creator는 admin 접근 불가, creator 페이지로 강제 이동
       return <Navigate to="/creator/my-videos" replace />;
     }
     return <Navigate to="/login" replace />;

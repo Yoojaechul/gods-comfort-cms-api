@@ -1,10 +1,17 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import "../styles/admin-layout.css";
 
 export default function AdminDashboardLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
+
+  // creator가 admin 레이아웃에 접근하는 것을 차단
+  // ProtectedRoute를 통과했지만, 추가 안전장치로 role 재확인
+  if (user && user.role !== "admin") {
+    // creator는 admin 페이지 접근 불가, creator 페이지로 강제 이동
+    return <Navigate to="/creator/my-videos" replace />;
+  }
 
   const menuItems = [
     { path: "/admin/dashboard", label: "Dashboard", icon: "📊" },

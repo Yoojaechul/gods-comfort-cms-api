@@ -74,3 +74,4 @@ VITE_CMS_API_BASE_URL=/api
 3. ⏭️ 나머지 CMS API 엔드포인트 마이그레이션
 
 자세한 배포 가이드는 `FIREBASE_FUNCTIONS_DEPLOY_GUIDE.md`를 참고하세요.
+

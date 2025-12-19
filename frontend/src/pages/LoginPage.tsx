@@ -31,7 +31,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (user) {
       if (user.role === "admin") {
-        navigate("/admin/videos", { replace: true });
+        navigate("/admin/dashboard", { replace: true });
       } else if (user.role === "creator") {
         navigate("/creator/my-videos", { replace: true });
       }
@@ -47,9 +47,12 @@ export default function LoginPage() {
       const loggedInUser = await login(id, password);
 
       if (loggedInUser.role === "admin") {
-        navigate("/admin/videos", { replace: true });
+        navigate("/admin/dashboard", { replace: true });
       } else if (loggedInUser.role === "creator") {
         navigate("/creator/my-videos", { replace: true });
+      } else {
+        // role이 없거나 예상치 못한 경우
+        setError("사용자 역할을 확인할 수 없습니다.");
       }
     } catch (err: any) {
       setError(err.message || "로그인에 실패했습니다.");
