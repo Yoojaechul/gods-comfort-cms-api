@@ -1,63 +1,54 @@
-import express from "express";
-import cors from "cors";
+import Fastify from "fastify";
+import cors from "@fastify/cors";
 import db, { initDB } from "./db.js";
 
-const app = express();
+const PORT = Number(process.env.PORT || 8080);
+const HOST = "0.0.0.0";
+
+const app = Fastify({
+  logger: true,
+});
+
+await app.register(cors, {
+  origin: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-api-key"],
+});
 
 /**
- * Cloud Run 필수
- * - 반드시 process.env.PORT 사용
- * - 기본값 8080
+ * Cloud Run / LB 용 health
  */
-const PORT = process.env.PORT || 8080;
+app.get("/", async () => {
+  return {
+    status: "ok",
+    service: "cms-api",
+    message: "CMS API is running",
+  };
+});
+
+app.get("/health", async () => {
+  return {
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+  };
+});
+
+app.get("/api/ping", async () => {
+  return { pong: true };
+});
 
 /**
- * 미들웨어
- */
-app.use(cors());
-app.use(express.json());
-
-/**
- * === 서버 부팅 ===
- */
-console.log("🚀 CMS API Server starting...");
-console.log("PORT =", PORT);
-
-/**
- * === DB 초기화 ===
+ * DB init
  */
 await initDB();
 
 /**
- * === Health Check (Cloud Run / Load Balancer용) ===
+ * start
  */
-app.get("/", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-    service: "cms-api",
-    message: "CMS API is running",
-  });
-});
-
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "healthy",
-    timestamp: new Date().toISOString(),
-  });
-});
-
-/**
- * === 테스트용 API ===
- */
-app.get("/api/ping", (req, res) => {
-  res.json({ pong: true });
-});
-
-/**
- * === 서버 리슨 ===
- */
-app.listen(PORT, "0.0.0.0", () => {
-  console.log("========================================");
-  console.log(`✅ CMS API listening on port ${PORT}`);
-  console.log("========================================");
-});
+try {
+  await app.listen({ port: PORT, host: HOST });
+  app.log.info(`✅ CMS API listening on ${HOST}:${PORT}`);
+} catch (err) {
+  app.log.error(err);
+  process.exit(1);
+}
