@@ -1,96 +1,210 @@
-// server.js (ESM)
-// Cloud Run Fastify server with health + public health endpoints
+/**
+ * server.js
+ * Cloud Run + Fastify CMS API
+ */
 
 import Fastify from "fastify";
-import cors from "@fastify/cors";
-import multipart from "@fastify/multipart";
-import { initDB } from "./db.js";
+import dotenv from "dotenv";
+import Database from "better-sqlite3";
+import crypto from "crypto";
 
+dotenv.config();
+
+// ==================== ENV ====================
+const PORT = process.env.PORT || 8080;
+const NODE_ENV = process.env.NODE_ENV || "development";
+const isDevelopment = NODE_ENV !== "production";
+
+const LOCAL_BASE_URL =
+  process.env.LOCAL_BASE_URL || `http://localhost:${PORT}`;
+
+// ==================== Fastify ====================
 const fastify = Fastify({
   logger: true,
 });
 
-// -----------------------------
-// ENV
-// -----------------------------
-const PORT = Number(process.env.PORT || 8080);
-const HOST = "0.0.0.0";
+// ==================== DB ====================
+const db = new Database("cms.db");
 
-// -----------------------------
-// Plugins
-// -----------------------------
-await fastify.register(cors, {
-  origin: true,
-  credentials: true,
-});
-
-await fastify.register(multipart, {
-  limits: {
-    fileSize: 30 * 1024 * 1024, // 30MB
-  },
-});
-
-// -----------------------------
-// DB Init (important: before routes if routes use db)
-// -----------------------------
-try {
-  await initDB();
-  fastify.log.info("✅ DB initialized");
-} catch (e) {
-  fastify.log.error(e, "❌ DB init failed");
-  // Cloud Run에서는 실패하면 그냥 죽는 게 맞습니다(헬스체크도 실패해야 재기동됨)
-  process.exit(1);
+// ==================== Utils ====================
+function generateId() {
+  return crypto.randomBytes(16).toString("hex");
 }
 
-// -----------------------------
-// Routes
-// -----------------------------
+function generateApiKey() {
+  return crypto.randomBytes(32).toString("hex");
+}
 
-// Root (optional) - 간단 상태 확인용
+function hashApiKey(apiKey) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto
+    .pbkdf2Sync(apiKey, salt, 10000, 64, "sha512")
+    .toString("hex");
+  return { hash, salt };
+}
+
+// ==================== DB INIT ====================
+async function initDB() {
+  return true;
+}
+
+// ==================== Schema ====================
+function ensureSchema() {
+  db.exec(`
+    PRAGMA foreign_keys = ON;
+
+    CREATE TABLE IF NOT EXISTS sites (
+      id TEXT PRIMARY KEY,
+      domain TEXT,
+      name TEXT NOT NULL,
+      homepage_url TEXT,
+      api_base TEXT,
+      facebook_key TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      site_id TEXT,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE,
+      role TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      password_hash TEXT,
+      api_key_hash TEXT,
+      api_key_salt TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT,
+      FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS videos (
+      id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      video_id TEXT,
+      source_url TEXT NOT NULL,
+      title TEXT,
+      thumbnail_url TEXT,
+      embed_url TEXT,
+      language TEXT DEFAULT 'en',
+      status TEXT DEFAULT 'active',
+      visibility TEXT DEFAULT 'public',
+      views_count INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT,
+      FOREIGN KEY (site_id) REFERENCES sites(id),
+      FOREIGN KEY (owner_id) REFERENCES users(id)
+    );
+  `);
+}
+
+// ==================== Default Site ====================
+function ensureDefaultSiteRow() {
+  const exists = db
+    .prepare("SELECT id FROM sites WHERE id = ?")
+    .get("gods");
+
+  if (!exists) {
+    db.prepare(
+      `
+      INSERT INTO sites (id, domain, name, homepage_url, api_base)
+      VALUES (?, ?, ?, ?, ?)
+    `
+    ).run(
+      "gods",
+      "godcomfortword.com",
+      "God's Comfort Word",
+      "https://www.godcomfortword.com",
+      LOCAL_BASE_URL
+    );
+
+    console.log("✅ Default site created");
+  }
+}
+
+// ==================== Dev Admin ====================
+function safeAdminBootstrap() {
+  if (!isDevelopment) return;
+
+  const admin = db
+    .prepare("SELECT id FROM users WHERE role='admin' LIMIT 1")
+    .get();
+
+  if (admin) return;
+
+  const adminId = generateId();
+  const apiKey = generateApiKey();
+  const { hash, salt } = hashApiKey(apiKey);
+
+  db.prepare(
+    `
+    INSERT INTO users
+    (id, site_id, name, role, api_key_hash, api_key_salt)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `
+  ).run(adminId, "gods", "Admin", "admin", hash, salt);
+
+  console.log("=".repeat(60));
+  console.log("✅ Dev Admin Created");
+  console.log("API KEY:", apiKey);
+  console.log("=".repeat(60));
+}
+
+// ==================== Routes ====================
+
+// root
 fastify.get("/", async () => {
-  return { status: "healthy", timestamp: new Date().toISOString() };
+  return {
+    service: "cms-api",
+    status: "running",
+  };
 });
 
-// health (existing)
+// health (internal)
 fastify.get("/health", async () => {
-  return { status: "ok", service: "cms-api", message: "CMS API is running" };
+  return {
+    status: "ok",
+    service: "cms-api",
+    message: "CMS API is running",
+  };
 });
 
-// ✅ public health alias (your request)
+// ✅ public health (Cloud Run / external check)
 fastify.get("/public/health", async () => {
-  return { status: "ok", service: "cms-api", message: "CMS API is running" };
+  return {
+    status: "ok",
+    service: "cms-api",
+    message: "CMS API is running",
+  };
 });
 
-// ✅ (optional) healthz alias
+// ✅ public healthz (K8s / monitoring)
 fastify.get("/public/healthz", async () => {
-  return { status: "ok", service: "cms-api", message: "CMS API is running" };
+  return {
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+  };
 });
 
-// 404 handler (명확한 메시지)
-fastify.setNotFoundHandler((req, reply) => {
-  reply.code(404).send({
-    message: `Route ${req.method}:${req.url} not found`,
-    error: "Not Found",
-    statusCode: 404,
+// ==================== Boot ====================
+async function start() {
+  await initDB();
+  ensureSchema();
+  ensureDefaultSiteRow();
+  safeAdminBootstrap();
+
+  await fastify.listen({
+    port: PORT,
+    host: "0.0.0.0",
   });
-});
 
-// Error handler
-fastify.setErrorHandler((err, req, reply) => {
-  fastify.log.error(err);
-  reply.code(500).send({
-    error: "Internal Server Error",
-    message: err?.message || "Unknown error",
-  });
-});
+  console.log(`🚀 CMS API running on port ${PORT}`);
+}
 
-// -----------------------------
-// Start
-// -----------------------------
-try {
-  await fastify.listen({ port: PORT, host: HOST });
-  fastify.log.info(`🚀 Server listening on http://${HOST}:${PORT}`);
-} catch (err) {
+start().catch((err) => {
   fastify.log.error(err);
   process.exit(1);
-}
+});
