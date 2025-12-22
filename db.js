@@ -2,13 +2,34 @@ import Database from "better-sqlite3";
 import { randomBytes, scryptSync } from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
+import fs from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 환경변수에서 DB 경로 가져오기 (없으면 기본값)
-const dbPath =
-  process.env.SQLITE_DB_PATH || path.join("/tmp", "cms.db");
+// --------------------------------------------------
+// ✅ DB Path Fix (Windows-safe)
+// - 기본값: 프로젝트 루트의 cms.db  (999. cms_api/cms.db)
+// - SQLITE_DB_PATH 환경변수가 있으면 우선 사용
+// - 환경변수 경로의 디렉터리가 없으면 자동 생성
+// --------------------------------------------------
+const defaultDbPath = path.join(__dirname, "cms.db");
+const dbPath = process.env.SQLITE_DB_PATH
+  ? path.isAbsolute(process.env.SQLITE_DB_PATH)
+    ? process.env.SQLITE_DB_PATH
+    : path.join(__dirname, process.env.SQLITE_DB_PATH)
+  : defaultDbPath;
+
+// 디렉터리 존재 보장 (better-sqlite3 에러 방지)
+try {
+  const dir = path.dirname(dbPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`📁 DB directory created: ${dir}`);
+  }
+} catch (e) {
+  console.warn("⚠️ DB directory ensure failed:", e?.message || e);
+}
 
 // better-sqlite3로 DB 열기 (동기 방식)
 const db = new Database(dbPath);
@@ -205,7 +226,6 @@ export async function initDB() {
     if (!site) {
       const defaultSiteName = "God's Comfort Word";
       const defaultDomain = "godcomfortword.com";
-      // ✅ 오타 수정: godscomfortword.com -> godcomfortword.com (원하시는 실제 도메인에 맞춰 조정 가능)
       const defaultHomepageUrl = "https://www.godcomfortword.com";
       const runtimePort = Number.parseInt(process.env.PORT || "", 10) || 8787;
       const defaultApiBase = process.env.API_BASE_URL || `http://localhost:${runtimePort}`;
@@ -296,7 +316,7 @@ export function generateManagementNo() {
 
     let nextSequence = 1;
     if (maxNo && maxNo.management_id) {
-      const match = String(maxNo.management_id).match(/-(\d+)$/);
+      const match = String(maxNo.management_id).match(/-(\\d+)$/);
       if (match) nextSequence = parseInt(match[1], 10) + 1;
     }
 
