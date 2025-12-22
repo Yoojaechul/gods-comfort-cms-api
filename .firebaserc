@@ -1,7 +1,13 @@
 {
   "projects": {
     "default": "gods-comfort-word"
+  },
+  "targets": {
+    "gods-comfort-word": {
+      "hosting": {
+        "home": ["gods-comfort-word"],
+        "cms": ["gods-comfort-word-cms"]
+      }
+    }
   }
 }
-
-
