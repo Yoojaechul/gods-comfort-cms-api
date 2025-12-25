@@ -1,83 +1,99 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
-import LoginPage from "./pages/LoginPage";
-import AdminDashboard from "./pages/AdminDashboard";
-import AdminVideosPage from "./pages/AdminVideosPage";
-import AdminCreatorsPage from "./pages/AdminCreatorsPage";
-import AdminUsersPage from "./pages/AdminUsersPage";
-import AdminSettingsPage from "./pages/AdminSettingsPage";
-import FacebookKeysPage from "./pages/FacebookKeysPage";
-import CreatorMyVideosPage from "./pages/CreatorMyVideosPage";
-import AdminDashboardLayout from "./components/AdminDashboardLayout";
-import CreatorDashboardLayout from "./components/CreatorDashboardLayout";
 
-function ProtectedRoute({
-  children,
-  roles,
-}: {
-  children: JSX.Element;
-  roles?: string[];
-}) {
-  const { user, loading } = useAuth();
+import LoginPage from "./pages/LoginPage";
+import ChangePasswordPage from "./pages/ChangePasswordPage";
+
+// Admin
+import AdminDashboardLayout from "./components/AdminDashboardLayout";
+import AdminVideosPage from "./pages/AdminVideosPage";
+
+// Creator
+import CreatorDashboardLayout from "./components/CreatorDashboardLayout";
+import CreatorMyVideosPage from "./pages/CreatorMyVideosPage";
+
+/* =========================
+   보호 라우트 컴포넌트
+========================= */
+
+function RequireAuth({ children }: { children: JSX.Element }) {
+  const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+    return <div style={{ padding: 40 }}>Loading...</div>;
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  // 권한 체크: roles가 지정된 경우 해당 역할만 허용
-  if (roles && !roles.includes(user.role)) {
-    // 권한이 없으면 role에 맞는 기본 페이지로 리다이렉트
-    // creator가 admin 접근 시 차단하고 creator 페이지로 이동
-    if (user.role === "admin") {
-      return <Navigate to="/admin/dashboard" replace />;
-    } else if (user.role === "creator") {
-      // creator는 admin 접근 불가, creator 페이지로 강제 이동
-      return <Navigate to="/creator/my-videos" replace />;
-    }
+  if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
   return children;
 }
 
+function RequireRole({
+  role,
+  children,
+}: {
+  role: "admin" | "creator";
+  children: JSX.Element;
+}) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <div style={{ padding: 40 }}>Loading...</div>;
+  }
+
+  if (!user || user.role !== role) {
+    // 잘못된 역할 접근 시 로그인 페이지로 리다이렉트
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+}
+
+/* =========================
+   앱 라우팅
+========================= */
+
 export default function App() {
   return (
     <Routes>
+      {/* 로그인 */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/change-password" element={<ChangePasswordPage />} />
 
+      {/* ===== Admin ===== */}
       <Route
         path="/admin/*"
         element={
-          <ProtectedRoute roles={["admin"]}>
+          <RequireAuth>
+            <RequireRole role="admin">
             <AdminDashboardLayout />
-          </ProtectedRoute>
+            </RequireRole>
+          </RequireAuth>
         }
       >
-        <Route path="dashboard" element={<AdminDashboard />} />
-        <Route index element={<Navigate to="/admin/dashboard" replace />} />
+        <Route path="dashboard" element={<Navigate to="videos" replace />} />
         <Route path="videos" element={<AdminVideosPage />} />
-        <Route path="creators" element={<AdminCreatorsPage />} />
-        <Route path="users" element={<AdminUsersPage />} />
-        <Route path="settings" element={<AdminSettingsPage />} />
       </Route>
 
+      {/* ===== Creator ===== */}
       <Route
         path="/creator/*"
         element={
-          <ProtectedRoute roles={["creator"]}>
+          <RequireAuth>
+            <RequireRole role="creator">
             <CreatorDashboardLayout />
-          </ProtectedRoute>
+            </RequireRole>
+          </RequireAuth>
         }
       >
         <Route path="my-videos" element={<CreatorMyVideosPage />} />
-        <Route index element={<Navigate to="/creator/my-videos" replace />} />
-        <Route path="facebook-keys" element={<FacebookKeysPage />} />
+        <Route path="" element={<Navigate to="my-videos" replace />} />
       </Route>
 
+      {/* 기본 경로 */}
+      <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );

@@ -1,9 +1,13 @@
 // nest-api/src/main.ts
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
+import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // 전역 Exception Filter 등록 (모든 에러를 JSON으로 반환)
+  app.useGlobalFilters(new HttpExceptionFilter());
 
   app.enableCors({
     origin: [

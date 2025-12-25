@@ -71,12 +71,29 @@ export class VideosService {
       const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(
         sourceUrl,
       )}&format=json`;
-      const response = await fetch(oembedUrl, { timeout: 5000 });
-      if (response.ok) {
-        const data = await response.json();
-        title = data.title || null;
+      
+      // AbortController를 사용하여 5초 타임아웃 구현
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      try {
+        const response = await fetch(oembedUrl, { signal: controller.signal });
+        
+        if (response.ok) {
+          const data = await response.json();
+          title = data.title || null;
+        }
+      } catch (fetchErr: any) {
+        // AbortError는 타임아웃, 다른 에러는 그대로 전달
+        if (fetchErr.name === 'AbortError') {
+          console.warn('YouTube oEmbed fetch timeout after 5 seconds');
+        } else {
+          throw fetchErr;
+        }
+      } finally {
+        clearTimeout(timeoutId);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn('YouTube oEmbed fetch failed:', err.message);
     }
 
@@ -139,6 +156,24 @@ export class VideosService {
     return db
       .prepare("SELECT * FROM videos WHERE id = ? AND visibility = 'public'")
       .get(id) as any || null;
+  }
+
+  /**
+   * Creator 영상 목록 조회
+   * owner_id와 site_id를 기반으로 자신의 영상만 반환
+   */
+  async getCreatorVideos(ownerId: string, siteId: string): Promise<{ videos: any[] }> {
+    const db = this.databaseService.getDb();
+    
+    const videos = db
+      .prepare(
+        "SELECT * FROM videos WHERE site_id = ? AND owner_id = ? ORDER BY created_at DESC"
+      )
+      .all(siteId, ownerId) as any[];
+
+    return {
+      videos: videos || [],
+    };
   }
 
   /**

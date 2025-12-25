@@ -1,137 +1,169 @@
-import { createContext, useContext, useState, useEffect, useMemo, ReactNode } from "react";
-import { apiGet, apiPost } from "../lib/apiClient";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { apiPost } from "../lib/apiClient";
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: "admin" | "creator";
-  site_id?: string | null;
-}
+type Role = "admin" | "creator" | string;
 
-interface AuthContextType {
-  user: User | null;
+export type AuthUser = {
+  email?: string;
+  role?: Role;
+  [key: string]: any;
+};
+
+type LoginResponse = {
+  user?: AuthUser;
+  token?: string;
+  accessToken?: string;
+  jwt?: string;
+  data?: {
+    user?: AuthUser;
+    token?: string;
+    accessToken?: string;
+    jwt?: string;
+  };
+  [key: string]: any;
+};
+
+type AuthContextValue = {
+  isAuthenticated: boolean;
   token: string | null;
+  user: AuthUser | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<User>;
-  loginWithoutRedirect: (username: string, password: string) => Promise<void>;
+  error: string | null;
+  login: (email: string, password: string) => Promise<{ ok: boolean; user?: AuthUser; error?: string }>;
   logout: () => void;
+  refreshFromStorage: () => void;
+};
+
+const STORAGE_TOKEN_KEY = "cms_token";
+const STORAGE_USER_KEY = "cms_user";
+
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+function safeJsonParse<T>(value: string | null): T | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+function pickToken(data: LoginResponse): string | null {
+  const token =
+    data?.token ||
+    data?.accessToken ||
+    data?.jwt ||
+    data?.data?.token ||
+    data?.data?.accessToken ||
+    data?.data?.jwt;
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  return typeof token === "string" && token.trim().length > 0 ? token : null;
+}
+
+function pickUser(data: LoginResponse): AuthUser | null {
+  const user = data?.user || data?.data?.user;
+  return user && typeof user === "object" ? (user as AuthUser) : null;
+}
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const storedSiteId = localStorage.getItem("site_id");
-    if (!storedSiteId) {
-      localStorage.setItem("site_id", "gods");
-      console.log("site_id 기본값 'gods' 설정됨");
-    }
+  const refreshFromStorage = () => {
+    const savedToken = localStorage.getItem(STORAGE_TOKEN_KEY);
+    const savedUser = safeJsonParse<AuthUser>(localStorage.getItem(STORAGE_USER_KEY));
 
-    const storedToken = localStorage.getItem("cms_token");
-    const storedUser = localStorage.getItem("cms_user");
-
-    if (!storedToken) {
-      setLoading(false);
-      return;
-    }
-
-    setToken(storedToken);
-
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch {
-        // ignore
-      }
-    }
-
-    (async () => {
-      try {
-        // ✅ 백엔드에 /me 가 실제로 있으면 정상 동작
-        const data = await apiGet<{ user?: any }>("/me", { auth: true });
-        const userData = data.user || data;
-
-        if (userData) {
-          const nextUser: User = {
-            id: userData.id || userData.sub || "unknown",
-            name: userData.name || userData.username || "User",
-            email: userData.email || userData.username || "unknown@example.com",
-            role: userData.role,
-            site_id: userData.site_id ?? null,
-          };
-
-          setUser(nextUser);
-          localStorage.setItem("cms_user", JSON.stringify(nextUser));
-          localStorage.setItem("cms_user_role", nextUser.role);
-        }
-      } catch (e) {
-        const error = e as Error & { status?: number };
-        const status = error.status;
-
-        if (status === 401 || status === 403) {
-          setUser(null);
-          setToken(null);
-          localStorage.removeItem("cms_token");
-          localStorage.removeItem("cms_user");
-          localStorage.removeItem("cms_user_role");
-        }
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  const login = async (username: string, password: string): Promise<User> => {
-    const data = await apiPost<{ token?: string; accessToken?: string; user: any }>(
-      "/auth/login",
-      { email: username, password },
-      { auth: false } // ✅ 로그인 요청은 토큰 없이
-    );
-
-    const accessToken = data.token ?? data.accessToken;
-    const userData = data.user;
-
-    if (!accessToken) throw new Error("토큰을 받지 못했습니다.");
-    if (!userData || !userData.role) throw new Error("사용자 정보를 받지 못했습니다.");
-
-    const nextUser: User = {
-      id: userData.id || userData.sub || "unknown",
-      name: userData.name || userData.username || "User",
-      email: userData.email || userData.username || username,
-      role: userData.role,
-      site_id: userData.site_id ?? null,
-    };
-
-    setToken(accessToken);
-    setUser(nextUser);
-
-    localStorage.setItem("cms_token", accessToken);
-    localStorage.setItem("cms_user", JSON.stringify(nextUser));
-    localStorage.setItem("cms_user_role", nextUser.role);
-
-    return nextUser;
+    const ok = !!(savedToken && savedToken.trim().length > 0);
+    setIsAuthenticated(ok);
+    setToken(ok ? savedToken : null);
+    setUser(savedUser ?? null);
+    setLoading(false);
+    setError(null);
   };
 
-  const loginWithoutRedirect = async (username: string, password: string) => {
-    await login(username, password);
+  useEffect(() => {
+    refreshFromStorage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const login = async (email: string, password: string) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data = (await apiPost("/auth/login", { email, password })) as LoginResponse;
+
+      const nextToken = pickToken(data);
+      const nextUser = pickUser(data);
+
+      // ✅ JWT 형식 검사/디코딩 없음 (dummy-token도 OK)
+      if (!nextToken) {
+        const msg = "유효한 JWT 토큰을 받지 못했습니다.";
+        setIsAuthenticated(false);
+        setToken(null);
+        setUser(null);
+        setError(msg);
+        setLoading(false);
+        return { ok: false, error: msg };
+      }
+
+      localStorage.setItem(STORAGE_TOKEN_KEY, nextToken);
+
+      if (nextUser) {
+        localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(nextUser));
+      } else {
+        localStorage.removeItem(STORAGE_USER_KEY);
+      }
+
+      setIsAuthenticated(true);
+      setToken(nextToken);
+      setUser(nextUser ?? null);
+      setLoading(false);
+      setError(null);
+
+      return { ok: true, user: nextUser ?? null };
+    } catch (e: any) {
+      const msg =
+        typeof e?.message === "string" && e.message.trim().length > 0
+          ? e.message
+          : "로그인 중 오류가 발생했습니다.";
+
+      setIsAuthenticated(false);
+      setToken(null);
+      setUser(null);
+      setError(msg);
+      setLoading(false);
+
+      return { ok: false, error: msg };
+    }
   };
 
   const logout = () => {
-    setUser(null);
+    localStorage.removeItem(STORAGE_TOKEN_KEY);
+    localStorage.removeItem(STORAGE_USER_KEY);
+
+    setIsAuthenticated(false);
     setToken(null);
-    localStorage.removeItem("cms_token");
-    localStorage.removeItem("cms_user");
-    localStorage.removeItem("cms_user_role");
+    setUser(null);
+    setError(null);
+    setLoading(false);
   };
 
-  const value = useMemo(
-    () => ({ user, token, loading, login, loginWithoutRedirect, logout }),
-    [user, token, loading]
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      isAuthenticated,
+      token,
+      user,
+      loading,
+      error,
+      login,
+      logout,
+      refreshFromStorage,
+    }),
+    [isAuthenticated, token, user, loading, error]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

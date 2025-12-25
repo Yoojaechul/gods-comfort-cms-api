@@ -1,14 +1,19 @@
 import {
   Controller,
+  Get,
   Post,
+  Query,
   Body,
   UseGuards,
+  Request,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { VideosService } from './videos.service';
 import {
@@ -46,5 +51,63 @@ export class VideosController {
     @Body() dto: VideoMetadataRequestDto,
   ): Promise<VideoMetadataResponseDto> {
     return this.videosService.getVideoMetadata(dto);
+  }
+}
+
+/**
+ * Creator 전용 영상 컨트롤러
+ * Creator가 자신의 영상만 조회할 수 있는 API
+ */
+@ApiTags('creator')
+@Controller('creator')
+export class CreatorVideosController {
+  constructor(private readonly videosService: VideosService) {}
+
+  /**
+   * Creator 영상 목록 조회
+   * JWT에서 추출한 사용자 정보를 기반으로 자신의 영상만 반환
+   */
+  @Get('videos')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Creator 영상 목록 조회' })
+  @ApiQuery({
+    name: 'site_id',
+    required: false,
+    description: '사이트 ID (선택적, JWT에서 가져온 값 사용)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Creator 영상 목록 조회 성공',
+    schema: {
+      example: {
+        videos: [
+          {
+            id: 'abc123',
+            title: '샘플 영상',
+            platform: 'youtube',
+            visibility: 'public',
+            thumbnail_url: 'https://img.youtube.com/vi/.../hqdefault.jpg',
+            url: 'https://www.youtube.com/watch?v=...',
+            language: 'ko',
+            site_id: 'gods',
+            owner_id: 'creator-001',
+          },
+        ],
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
+  @ApiResponse({ status: 403, description: 'Creator 역할이 아님' })
+  async getCreatorVideos(@Request() req: any, @Query('site_id') siteId?: string) {
+    const user = req.user;
+    const targetSiteId = siteId || user.site_id;
+
+    // Creator는 자신의 site_id만 접근 가능
+    if (user.role === 'creator' && targetSiteId !== user.site_id) {
+      throw new ForbiddenException('Access denied to this site_id');
+    }
+
+    return this.videosService.getCreatorVideos(user.id, targetSiteId);
   }
 }

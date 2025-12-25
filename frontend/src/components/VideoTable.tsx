@@ -23,8 +23,8 @@ interface Video {
 }
 
 interface VideoTableProps {
-  videos: Video[];
-  selectedVideos: string[];
+  videos?: Video[];
+  selectedVideos?: string[];
   onSelectChange: (ids: string[]) => void;
   isAdmin: boolean;
   token: string;
@@ -32,8 +32,8 @@ interface VideoTableProps {
 }
 
 export default function VideoTable({
-  videos,
-  selectedVideos,
+  videos = [],
+  selectedVideos = [],
   onSelectChange,
   isAdmin,
   token,
@@ -41,9 +41,13 @@ export default function VideoTable({
 }: VideoTableProps) {
   const [previewVideo, setPreviewVideo] = useState<Video | null>(null);
 
+  // Ensure videos is always an array
+  const safeVideos = Array.isArray(videos) ? videos : [];
+  const safeSelectedVideos = Array.isArray(selectedVideos) ? selectedVideos : [];
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      onSelectChange(videos.map((v) => v.id));
+      onSelectChange(safeVideos.map((v) => v.id));
     } else {
       onSelectChange([]);
     }
@@ -51,9 +55,9 @@ export default function VideoTable({
 
   const handleSelectOne = (id: string, checked: boolean) => {
     if (checked) {
-      onSelectChange([...selectedVideos, id]);
+      onSelectChange([...safeSelectedVideos, id]);
     } else {
-      onSelectChange(selectedVideos.filter((vid) => vid !== id));
+      onSelectChange(safeSelectedVideos.filter((vid) => vid !== id));
     }
   };
 
@@ -96,7 +100,7 @@ export default function VideoTable({
               <th className="px-6 py-3 text-left">
                 <input
                   type="checkbox"
-                  checked={selectedVideos.length === videos.length && videos.length > 0}
+                  checked={safeSelectedVideos.length === safeVideos.length && safeVideos.length > 0}
                   onChange={(e) => handleSelectAll(e.target.checked)}
                   className="rounded border-gray-300"
                 />
@@ -125,14 +129,14 @@ export default function VideoTable({
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {videos.length === 0 ? (
+            {safeVideos.length === 0 ? (
               <tr>
                 <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                   등록된 영상이 없습니다.
                 </td>
               </tr>
             ) : (
-              videos.map((video) => {
+              safeVideos.map((video) => {
                 // 관리번호 가져오기 (표준 필드명 videoManageNo 우선, 기존 필드명들도 지원)
                 const getManagementNo = (): string => {
                   const candidates = [
@@ -162,7 +166,7 @@ export default function VideoTable({
                     <td className="px-6 py-4">
                       <input
                         type="checkbox"
-                        checked={selectedVideos.includes(video.id)}
+                        checked={safeSelectedVideos.includes(video.id)}
                         onChange={(e) => handleSelectOne(video.id, e.target.checked)}
                         className="rounded border-gray-300"
                       />
@@ -219,6 +223,11 @@ export default function VideoTable({
     </>
   );
 }
+
+
+
+
+
 
 
 

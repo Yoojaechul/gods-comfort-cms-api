@@ -1,6 +1,7 @@
 /**
  * 영상 메타데이터 가져오기 공통 함수
- * YouTube 영상의 제목, 썸네일 등을 자동으로 가져옵니다.
+ * - YouTube: CMS API(/metadata/youtube)를 통해 제목/썸네일 자동 가져오기
+ * - 썸네일 URL 정규화 유틸 포함
  */
 
 import { CMS_API_BASE } from "../config";
@@ -11,213 +12,148 @@ export interface VideoMetadata {
   thumbnail_url?: string;
 }
 
-/**
- * YouTube URL 검증 함수
- */
 export function validateYouTubeUrl(url: string): boolean {
   if (!url || !url.trim()) return false;
-  
+
+  const trimmed = url.trim();
   const patterns = [
-    /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\/.+$/,
-    /^[a-zA-Z0-9_-]{11}$/, // YouTube ID만 입력한 경우
+    /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\/.+$/i,
+    /^[a-zA-Z0-9_-]{11}$/, // videoId만
   ];
-  
-  return patterns.some(pattern => pattern.test(url.trim()));
+
+  return patterns.some((p) => p.test(trimmed));
 }
 
-/**
- * Facebook URL 검증 함수 (완화된 검증)
- * facebook.com/* 또는 fb.watch/* 패턴 허용
- */
 export function validateFacebookUrl(url: string): boolean {
   if (!url || !url.trim()) return false;
-  
   const trimmed = url.trim();
-  
-  // facebook.com 또는 fb.watch 포함 여부 확인
-  const patterns = [
-    /facebook\.com/i,
-    /fb\.watch/i,
-  ];
-  
-  return patterns.some(pattern => pattern.test(trimmed));
+  return /facebook\.com/i.test(trimmed) || /fb\.watch/i.test(trimmed);
 }
 
-/**
- * YouTube URL에서 videoId 추출 함수
- */
 export function extractYoutubeId(url: string): string | null {
   if (!url || !url.trim()) return null;
-  
   const trimmed = url.trim();
-  
-  // YouTube ID만 입력한 경우 (11자리)
-  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
-    return trimmed;
-  }
-  
-  // YouTube URL 패턴들
+
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+
   const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
-    /youtube\.com\/.*[?&]v=([a-zA-Z0-9_-]{11})/,
-    /(?:www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,
-    /(?:www\.)?youtube\.com\/.*[?&]v=([a-zA-Z0-9_-]{11})/,
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/i,
+    /youtube\.com\/.*[?&]v=([a-zA-Z0-9_-]{11})/i,
   ];
-  
-  for (const pattern of patterns) {
-    const match = trimmed.match(pattern);
-    if (match && match[1]) {
-      return match[1];
-    }
+
+  for (const p of patterns) {
+    const m = trimmed.match(p);
+    if (m?.[1]) return m[1];
   }
-  
+
   return null;
 }
 
-/**
- * YouTube URL을 정규화하여 oembed API에 전달 가능한 형태로 변환
- */
-function normalizeYouTubeUrlForOembed(url: string): string {
-  const trimmed = url.trim();
-  
-  // YouTube ID만 입력한 경우
+function normalizeYouTubeUrlForRequest(urlOrId: string): string {
+  const trimmed = (urlOrId || "").trim();
+
+  // ID만 들어오면 표준 watch URL로 변환
   if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
     return `https://www.youtube.com/watch?v=${trimmed}`;
   }
-  
-  // 이미 http:// 또는 https://로 시작하면 그대로 사용
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    return trimmed;
-  }
-  
-  // 그 외의 경우 https://를 앞에 붙임
+
+  // http(s)면 그대로
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+
+  // 그 외는 https:// 붙임
   return `https://${trimmed}`;
 }
 
 /**
- * YouTube 영상 메타데이터 가져오기 (oembed API 사용)
- * @param sourceUrl - YouTube URL 또는 ID
- * @param token - 인증 토큰 (사용하지 않음, 호환성을 위해 유지)
- * @returns 메타데이터 객체 (title, description, thumbnail_url)
+ * ✅ YouTube 메타데이터 (CMS API 사용)
+ * - 프론트에서 유튜브 oEmbed 직접 호출하면 CORS/401/HTML 응답(doctype) 문제가 생길 수 있어
+ *   반드시 배포된 CMS API의 /metadata/youtube를 사용합니다.
  */
 export async function fetchYouTubeMetadata(
-  sourceUrl: string,
-  token?: string
+  sourceUrlOrId: string
 ): Promise<VideoMetadata> {
   try {
-    // URL 정규화
-    const normalizedUrl = normalizeYouTubeUrlForOembed(sourceUrl);
+    const normalized = normalizeYouTubeUrlForRequest(sourceUrlOrId);
+
+    // CMS_API_BASE를 사용 (환경 변수 기반, SPA 도메인 차단 로직 포함)
+    // window.location.origin fallback 제거 (SPA 도메인으로 API 요청하는 것 방지)
+    const base = CMS_API_BASE;
     
-    // YouTube oembed API 호출
-    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(normalizedUrl)}&format=json`;
-    
-    const response = await fetch(oembedUrl);
-    
-    if (!response.ok) {
-      // oembed API 실패 시 빈 객체 반환 (에러를 throw하지 않음)
-      console.warn("YouTube oembed API 호출 실패:", response.status, response.statusText);
+    if (!base || !base.trim()) {
+      throw new Error(
+        "API base URL is not configured. Please set VITE_CMS_API_BASE_URL or VITE_API_BASE_URL environment variable."
+      );
+    }
+
+    const apiUrl = `${String(base).replace(/\/+$/, "")}/metadata/youtube?url=${encodeURIComponent(
+      normalized
+    )}`;
+
+    const resp = await fetch(apiUrl, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+
+    if (!resp.ok) {
+      const t = await resp.text().catch(() => "");
+      console.warn("[fetchYouTubeMetadata] failed:", resp.status, t.slice(0, 200));
       return {};
     }
-    
-    const data = await response.json();
-    
-    // oembed 응답에서 title과 thumbnail_url 추출
-    const metadata: VideoMetadata = {
-      title: data.title || undefined,
-      thumbnail_url: data.thumbnail_url || undefined,
+
+    const data = await resp.json().catch(() => null);
+
+    const title = data?.title ?? "";
+    const thumb = data?.thumbnailUrl ?? "";
+
+    const meta: VideoMetadata = {
+      title: title || undefined,
+      thumbnail_url: thumb || undefined,
     };
-    
-    // thumbnail_url이 없으면 youtubeId 기반으로 자동 생성
-    if (!metadata.thumbnail_url) {
-      const youtubeId = extractYoutubeId(sourceUrl);
-      if (youtubeId) {
-        metadata.thumbnail_url = `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg`;
-      }
+
+    // 썸네일이 비어있으면 videoId 기반으로 생성
+    if (!meta.thumbnail_url) {
+      const vid = extractYoutubeId(sourceUrlOrId);
+      if (vid) meta.thumbnail_url = `https://img.youtube.com/vi/${vid}/maxresdefault.jpg`;
     }
-    
-    return metadata;
-  } catch (error) {
-    // 네트워크 오류 등 예외 발생 시 빈 객체 반환 (에러를 throw하지 않음)
-    console.warn("YouTube 메타데이터 가져오기 중 오류 발생:", error);
+
+    return meta;
+  } catch (e) {
+    console.warn("[fetchYouTubeMetadata] error:", e);
     return {};
   }
 }
 
 /**
- * 썸네일 URL을 정규화합니다
- * - 상대경로를 절대경로로 변환 (CMS_API_BASE 기준)
- * - 잘못된 포트(127.0.0.1:7242 등)를 제거하거나 수정
- * - data URL은 그대로 유지
- * @param thumbnailUrl - 정규화할 썸네일 URL
- * @param baseUrl - 기본 URL (기본값: CMS_API_BASE)
- * @returns 정규화된 썸네일 URL
+ * 썸네일 URL 정규화
+ * - 상대경로를 CMS_API_BASE 기준 절대경로로 변환
+ * - localhost/127.0.0.1 잘못된 포트가 있으면 baseUrl host로 교체
+ * - data URL은 그대로
  */
 export function normalizeThumbnailUrl(
   thumbnailUrl: string | null | undefined,
   baseUrl: string = CMS_API_BASE
 ): string | null {
-  if (!thumbnailUrl || !thumbnailUrl.trim()) {
-    return null;
-  }
+  if (!thumbnailUrl || !thumbnailUrl.trim()) return null;
 
   const trimmed = thumbnailUrl.trim();
 
-  // data URL은 그대로 반환
-  if (trimmed.startsWith("data:")) {
-    return trimmed;
-  }
+  if (trimmed.startsWith("data:")) return trimmed;
 
-  // 이미 절대 URL인 경우
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    // 잘못된 포트(127.0.0.1:7242 등)가 포함되어 있으면 제거하거나 수정
     if (trimmed.includes("127.0.0.1:7242") || trimmed.includes("localhost:7242")) {
-      console.warn(`[normalizeThumbnailUrl] 잘못된 포트가 포함된 URL 감지: ${trimmed}`);
-      // 포트 부분을 제거하거나 baseUrl로 대체
       try {
-        const url = new URL(trimmed);
-        // baseUrl의 포트를 사용하거나 기본 포트 사용
-        const baseUrlObj = new URL(baseUrl);
-        url.host = baseUrlObj.host;
-        return url.toString();
+        const u = new URL(trimmed);
+        const b = new URL(baseUrl);
+        u.host = b.host;
+        return u.toString();
       } catch {
-        // URL 파싱 실패 시 원본 반환
         return trimmed;
       }
     }
     return trimmed;
   }
 
-  // 상대경로인 경우 절대경로로 변환
-  try {
-    // baseUrl이 /로 끝나지 않으면 제거
-    const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-    // thumbnailUrl이 /로 시작하지 않으면 / 추가
-    const normalizedThumbnail = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-    const result = `${normalizedBaseUrl}${normalizedThumbnail}`;
-    
-    // 디버깅: 상대경로 변환 로그
-    console.log(`[normalizeThumbnailUrl] 상대경로 변환: "${trimmed}" + "${baseUrl}" → "${result}"`);
-    
-    return result;
-  } catch (err) {
-    // 변환 실패 시 원본 반환
-    console.warn(`[normalizeThumbnailUrl] 상대경로 변환 실패:`, err);
-    return trimmed;
-  }
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  const normalizedPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return `${normalizedBase}${normalizedPath}`;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

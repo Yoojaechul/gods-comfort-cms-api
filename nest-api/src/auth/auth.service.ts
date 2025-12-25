@@ -16,6 +16,7 @@ import { DatabaseService } from '../database/database.service';
 import { LoginDto } from './dto/login.dto';
 import { SetupPasswordDto } from './dto/setup-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { CheckEmailDto } from './dto/check-email.dto';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -374,8 +375,9 @@ export class AuthService implements OnModuleInit {
     userId: string,
     currentPassword: string,
     newPassword: string,
+    email?: string,
   ): Promise<{ success: boolean; message: string }> {
-    this.logger.log(`🔐 비밀번호 변경 시도 - User ID: ${userId}`);
+    this.logger.log(`🔐 비밀번호 변경 시도 - User ID: ${userId}${email ? `, Email: ${email}` : ''}`);
 
     try {
       // 사용자 조회
@@ -384,6 +386,18 @@ export class AuthService implements OnModuleInit {
       if (!user) {
         this.logger.warn(`❌ 사용자를 찾을 수 없음: ${userId}`);
         throw new NotFoundException('사용자를 찾을 수 없습니다.');
+      }
+
+      // email 파라미터가 제공된 경우, 사용자 이메일과 일치하는지 확인
+      if (email && user.email !== email) {
+        this.logger.warn(`❌ 이메일 불일치: 요청=${email}, 실제=${user.email}`);
+        throw new BadRequestException('이메일이 일치하지 않습니다.');
+      }
+
+      // admin 또는 creator 역할만 비밀번호 변경 가능
+      if (user.role !== 'admin' && user.role !== 'creator') {
+        this.logger.warn(`❌ 비밀번호 변경 권한 없음: ${user.role}`);
+        throw new ForbiddenException('비밀번호 변경은 관리자 또는 크리에이터 계정만 가능합니다.');
       }
 
       // 비밀번호가 설정되지 않은 경우
@@ -436,6 +450,122 @@ export class AuthService implements OnModuleInit {
       throw new InternalServerErrorException(
         '비밀번호 변경 중 오류가 발생했습니다. 관리자에게 문의하세요.',
       );
+    }
+  }
+
+  /**
+   * 이메일 확인
+   * 이메일이 존재하고 활성화된 계정인지 확인
+   * @param email 확인할 이메일
+   * @returns 이메일 존재 여부 및 역할 정보
+   */
+  async checkEmail(email: string): Promise<{ exists: boolean; role?: string }> {
+    this.logger.log(`📧 이메일 확인 요청: ${email}`);
+
+    try {
+      const user = this.databaseService.findUserByEmail(email);
+
+      if (!user) {
+        return {
+          exists: false,
+        };
+      }
+
+      return {
+        exists: true,
+        role: user.role || undefined,
+      };
+    } catch (error) {
+      this.logger.error(`🔥 이메일 확인 중 오류 발생:`, error);
+      return {
+        exists: false,
+      };
+    }
+  }
+
+  /**
+   * 이메일 기반 비밀번호 변경 (JWT 없이)
+   * @param email 사용자 이메일
+   * @param currentPassword 현재 비밀번호
+   * @param newPassword 새 비밀번호
+   * @returns 성공 메시지
+   */
+  async changePasswordByEmail(
+    email: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ ok: boolean; message?: string }> {
+    this.logger.log(`🔐 이메일 기반 비밀번호 변경 시도: ${email}`);
+
+    try {
+      // 사용자 조회
+      const user = this.databaseService.findUserByEmail(email);
+
+      if (!user) {
+        this.logger.warn(`❌ 사용자를 찾을 수 없음: ${email}`);
+        return {
+          ok: false,
+          message: '사용자를 찾을 수 없습니다.',
+        };
+      }
+
+      // admin 또는 creator 역할만 비밀번호 변경 가능
+      if (user.role !== 'admin' && user.role !== 'creator') {
+        this.logger.warn(`❌ 비밀번호 변경 권한 없음: ${user.role}`);
+        // 403 Forbidden을 던져서 컨트롤러에서 처리하도록 함
+        throw new ForbiddenException('비밀번호 변경은 관리자 또는 크리에이터 계정만 가능합니다.');
+      }
+
+      // 비밀번호가 설정되지 않은 경우
+      if (!user.password_hash) {
+        this.logger.warn(`⚠️  비밀번호가 설정되지 않은 계정: ${email}`);
+        return {
+          ok: false,
+          message: '비밀번호가 설정되지 않은 계정입니다. 최초 비밀번호 설정을 사용해주세요.',
+        };
+      }
+
+      // 현재 비밀번호 확인
+      const isValid = this.databaseService.verifyPassword(
+        currentPassword,
+        user.password_hash,
+        user.api_key_salt || '',
+      );
+
+      if (!isValid) {
+        this.logger.warn(`❌ 현재 비밀번호 불일치: ${email}`);
+        return {
+          ok: false,
+          message: '현재 비밀번호가 올바르지 않습니다.',
+        };
+      }
+
+      // 새 비밀번호 해싱 (scrypt 사용 - 기존 프로젝트와 동일한 방식)
+      const crypto = require('crypto');
+      const { scryptSync, randomBytes } = crypto;
+
+      const salt = randomBytes(16).toString('hex');
+      const hash = scryptSync(newPassword, salt, 64).toString('hex');
+
+      // 비밀번호 업데이트
+      this.databaseService.updateUserPassword(user.id, hash, salt);
+
+      this.logger.log(`✅ 비밀번호 변경 완료: ${user.email || user.name}`);
+
+      return {
+        ok: true,
+      };
+    } catch (error) {
+      // ForbiddenException은 그대로 전달 (403 상태 코드)
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+      
+      this.logger.error(`🔥 비밀번호 변경 중 예상치 못한 에러 발생:`, error);
+      return {
+        ok: false,
+        message: '비밀번호 변경 중 오류가 발생했습니다. 관리자에게 문의하세요.',
+      };
     }
   }
 }

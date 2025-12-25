@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { VideosController } from './videos.controller';
+import { VideosController, CreatorVideosController } from './videos.controller';
 import { PublicVideosController } from './public-videos.controller';
 import { VideosService } from './videos.service';
 import { DatabaseModule } from '../database/database.module';
@@ -10,7 +10,7 @@ import { DatabaseModule } from '../database/database.module';
  */
 @Module({
   imports: [DatabaseModule],
-  controllers: [VideosController, PublicVideosController],
+  controllers: [VideosController, PublicVideosController, CreatorVideosController],
   providers: [VideosService],
   exports: [VideosService],
 })

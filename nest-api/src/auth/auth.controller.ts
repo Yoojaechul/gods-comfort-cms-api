@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Request, ForbiddenException } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -9,6 +9,8 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { SetupPasswordDto } from './dto/setup-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ChangePasswordEmailDto } from './dto/change-password-email.dto';
+import { CheckEmailDto } from './dto/check-email.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @ApiTags('auth')
@@ -137,12 +139,82 @@ export class AuthController {
   }
 
   /**
-   * 비밀번호 변경
+   * 이메일 확인
+   */
+  @Post('check-email')
+  @ApiOperation({ summary: '이메일 존재 여부 확인' })
+  @ApiResponse({
+    status: 200,
+    description: '이메일 확인 결과',
+    schema: {
+      example: {
+        exists: true,
+        role: 'admin',
+      },
+    },
+  })
+  async checkEmail(@Body() checkEmailDto: CheckEmailDto) {
+    return this.authService.checkEmail(checkEmailDto.email);
+  }
+
+  /**
+   * 비밀번호 변경 (이메일 기반, JWT 불필요)
+   * 역할 체크: admin 또는 creator만 가능
+   * DB 업데이트: 현재 비밀번호 검증 후 새 비밀번호 해시하여 업데이트
    */
   @Post('change-password')
+  @ApiOperation({ summary: '비밀번호 변경 (이메일 기반)' })
+  @ApiResponse({
+    status: 200,
+    description: '비밀번호 변경 성공',
+    schema: {
+      example: {
+        ok: true,
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: '비밀번호 변경 실패',
+    schema: {
+      example: {
+        ok: false,
+        error: 'INVALID_PASSWORD',
+        message: '현재 비밀번호가 올바르지 않습니다.',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 403,
+    description: '권한 없음 (admin/creator만 가능)',
+    schema: {
+      example: {
+        statusCode: 403,
+        error: 'FORBIDDEN',
+        message: '비밀번호 변경은 관리자 또는 크리에이터 계정만 가능합니다.',
+      },
+    },
+  })
+  async changePassword(@Body() changePasswordDto: ChangePasswordEmailDto) {
+    const result = await this.authService.changePasswordByEmail(
+      changePasswordDto.email,
+      changePasswordDto.currentPassword,
+      changePasswordDto.newPassword,
+    );
+
+    // ok: false인 경우에도 200으로 반환하되, ok 필드로 성공/실패 구분
+    // 프론트엔드에서 ok 필드를 확인하여 처리
+    // 역할 체크 실패는 서비스에서 ForbiddenException을 던져서 자동으로 403 반환
+    return result;
+  }
+
+  /**
+   * 비밀번호 변경 (JWT 기반, 기존 방식 유지)
+   */
+  @Post('change-password-jwt')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: '비밀번호 변경' })
+  @ApiOperation({ summary: '비밀번호 변경 (JWT 기반)' })
   @ApiResponse({
     status: 200,
     description: '비밀번호 변경 성공',
@@ -155,14 +227,18 @@ export class AuthController {
   })
   @ApiResponse({ status: 400, description: '현재 비밀번호가 올바르지 않음' })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
-  async changePassword(
+  @ApiResponse({ status: 403, description: '권한 없음 (admin/creator만 가능)' })
+  async changePasswordJwt(
     @Body() changePasswordDto: ChangePasswordDto,
     @Request() req: any,
   ) {
+    // ChangePasswordDto에 email이 선택적으로 포함될 수 있음
+    const email = (changePasswordDto as any).email;
     return this.authService.changePassword(
       req.user.id,
       changePasswordDto.current_password,
       changePasswordDto.new_password,
+      email,
     );
   }
 }
