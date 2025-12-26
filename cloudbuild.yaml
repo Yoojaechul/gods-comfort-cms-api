@@ -1,31 +1,33 @@
 steps:
-  - name: "gcr.io/cloud-builders/docker"
-    args: ["build", "-t", "gcr.io/esoteric-throne-471613-j6/cms-api:$COMMIT_SHA", "."]
-
-  - name: "gcr.io/cloud-builders/docker"
-    args: ["push", "gcr.io/esoteric-throne-471613-j6/cms-api:$COMMIT_SHA"]
-
-  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
-    entrypoint: "gcloud"
+  # 1) Build image
+  - name: 'gcr.io/cloud-builders/docker'
     args:
-      [
-        "run",
-        "deploy",
-        "cms-api",
-        "--image",
-        "gcr.io/esoteric-throne-471613-j6/cms-api:$COMMIT_SHA",
-        "--region",
-        "asia-northeast3",
-        "--platform",
-        "managed",
-        "--allow-unauthenticated",
-        "--port",
-        "8080",
-      ]
+      - build
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/cms-api:$BUILD_ID'
+      - '.'
+
+  # 2) Push image  ✅ (이 단계가 없어서 Image not found가 난 겁니다)
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - push
+      - 'gcr.io/$PROJECT_ID/cms-api:$BUILD_ID'
+
+  # 3) Deploy to Cloud Run (IAM 설정은 여기서 건드리지 않음)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - cms-api
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/cms-api:$BUILD_ID'
+      - '--region'
+      - 'asia-northeast3'
+      - '--platform'
+      - 'managed'
+      - '--port'
+      - '8080'
 
 images:
-  - "gcr.io/esoteric-throne-471613-j6/cms-api:$COMMIT_SHA"
-
-timeout: "1200s"
-options:
-  logging: CLOUD_LOGGING_ONLY
+  - 'gcr.io/$PROJECT_ID/cms-api:$BUILD_ID'

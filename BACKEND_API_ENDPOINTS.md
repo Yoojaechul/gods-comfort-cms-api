@@ -369,3 +369,4 @@ https://us-central1-gods-comfort-word.cloudfunctions.net/api
 
 프론트엔드에서 이 URL을 `VITE_API_BASE_URL`로 설정하면 정상 작동합니다.
 
+

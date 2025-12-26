@@ -4,8 +4,10 @@ import { CMS_API_BASE } from "../config";
 /**
  * baseURL과 path를 안전하게 결합합니다.
  * baseURL이 없거나 잘못된 형식이면 에러를 던집니다 (상대 경로 요청 방지).
+ * 
+ * 단일 진실 원천(Single Source of Truth): 모든 API URL 결합은 이 함수만 사용합니다.
  */
-function buildUrl(baseUrl: string, path: string): string {
+export function buildUrl(baseUrl: string, path: string): string {
   if (!baseUrl || !baseUrl.trim()) {
     throw new Error(
       "CMS_API_BASE is not configured. Please set VITE_CMS_API_BASE_URL or VITE_API_BASE_URL environment variable. " +
@@ -20,7 +22,7 @@ function buildUrl(baseUrl: string, path: string): string {
     throw new Error(
       `CMS_API_BASE must be an absolute URL starting with http:// or https://. ` +
       `Current value: "${trimmed}". ` +
-      `Please set VITE_API_BASE_URL to a valid API server URL (e.g., https://api.godcomfortword.com).`
+      `Please set VITE_API_BASE_URL to a valid API server URL.`
     );
   }
 
@@ -34,7 +36,7 @@ function buildUrl(baseUrl: string, path: string): string {
   } catch (e) {
     throw new Error(
       `CMS_API_BASE is not a valid URL: "${trimmed}". ` +
-      `Please set VITE_API_BASE_URL to a valid API server URL (e.g., https://api.godcomfortword.com).`
+      `Please set VITE_API_BASE_URL to a valid API server URL.`
     );
   }
 
@@ -66,6 +68,9 @@ export async function apiRequest(
 
   const url = buildUrl(CMS_API_BASE, path);
 
+  // 디버깅을 위해 항상 requestUrl을 콘솔에 출력
+  console.log(`[apiRequest] ${options.method || "GET"} ${url}`);
+
   // Get auth token from localStorage if available
   const token = localStorage.getItem("cms_token");
   const headers: HeadersInit = {
@@ -94,28 +99,65 @@ export async function apiRequest(
   if (!response.ok) {
     // HTML 응답인 경우 (404 Not Found로 HTML이 반환된 경우)
     if (isHtmlResponse || isHtmlContent) {
-      const errorMessage = 
-        `API endpoint mismatch: Received HTML instead of JSON. ` +
-        `The API_BASE_URL (${CMS_API_BASE}) may be pointing to the SPA hosting domain instead of the API server. ` +
-        `Please set VITE_CMS_API_BASE_URL or VITE_API_BASE_URL to the correct API server URL (e.g., https://api.godcomfortword.com). ` +
-        `Status: ${response.status}, Requested URL: ${url}`;
-      throw new Error(errorMessage);
+      const errorMessage = "API 경로 없음(배포/라우팅 확인)";
+      // 네트워크 탭 확인용으로 console.error에 status/responseText/requestUrl 출력
+      console.error(`[apiRequest Error] Status: ${response.status}, URL: ${url}, Response (HTML):`, responseText.substring(0, 500));
+      const error = new Error(errorMessage);
+      (error as any).status = response.status;
+      throw error;
     }
     
-    // JSON 응답인 경우
-    let errorMessage = `${response.status} ${response.statusText}`;
-    if (responseText) {
-      try {
-        const json = JSON.parse(responseText);
-        errorMessage = json.message || json.error || errorMessage;
-      } catch {
-        // JSON 파싱 실패 시 텍스트 사용 (짧은 경우만)
-        const cleanText = responseText.replace(/<[^>]*>/g, "").trim();
-        if (cleanText.length > 0 && cleanText.length < 200) {
-          errorMessage = cleanText;
+    // JSON 응답인 경우 - 상태 코드별로 사용자 친화적인 에러 메시지 생성
+    let errorMessage = "";
+    const status = response.status;
+    
+    if (status === 400) {
+      // 400: 입력값/현재 비밀번호 확인 필요(서버 로그 확인 필요)
+      if (responseText) {
+        try {
+          const json = JSON.parse(responseText);
+          const serverMessage = json.message || json.error || "";
+          if (serverMessage) {
+            errorMessage = `${serverMessage} (서버 로그 확인 필요)`;
+          } else {
+            errorMessage = "입력값/현재 비밀번호 확인 필요(서버 로그 확인 필요)";
+          }
+        } catch {
+          errorMessage = "입력값/현재 비밀번호 확인 필요(서버 로그 확인 필요)";
         }
+      } else {
+        errorMessage = "입력값/현재 비밀번호 확인 필요(서버 로그 확인 필요)";
+      }
+    } else if (status === 401) {
+      // 401: 권한/인증 실패(로그인 상태 또는 토큰 확인)
+      errorMessage = "권한/인증 실패(로그인 상태 또는 토큰 확인)";
+    } else if (status === 404) {
+      // 404: API 경로 없음(배포/라우팅 확인)
+      errorMessage = "API 경로 없음(배포/라우팅 확인)";
+    } else if (status === 500) {
+      // 500: 서버 내부 오류(Cloud Run 로그 확인 필요)
+      errorMessage = "서버 내부 오류(Cloud Run 로그 확인 필요)";
+    } else {
+      // 기타 상태 코드
+      if (responseText) {
+        try {
+          const json = JSON.parse(responseText);
+          errorMessage = json.message || json.error || `${status} ${response.statusText}`;
+        } catch {
+          const cleanText = responseText.replace(/<[^>]*>/g, "").trim();
+          if (cleanText.length > 0 && cleanText.length < 200) {
+            errorMessage = cleanText;
+          } else {
+            errorMessage = `${status} ${response.statusText}`;
+          }
+        }
+      } else {
+        errorMessage = `${status} ${response.statusText}`;
       }
     }
+    
+    // 네트워크 탭 확인용으로 console.error에 status/responseText/requestUrl 출력
+    console.error(`[apiRequest Error] Status: ${status}, URL: ${url}, Response:`, responseText);
     
     const error = new Error(errorMessage);
     (error as any).status = response.status;
@@ -130,11 +172,8 @@ export async function apiRequest(
   // 성공 응답도 HTML인지 확인
   if (isHtmlResponse || isHtmlContent) {
     // HTML 응답은 잘못된 API_BASE_URL 설정을 의미
-    const errorMessage = 
-      `API endpoint mismatch: Received HTML instead of JSON. ` +
-      `The API_BASE_URL (${CMS_API_BASE}) may be pointing to the SPA hosting domain instead of the API server. ` +
-      `Please set VITE_CMS_API_BASE_URL or VITE_API_BASE_URL to the correct API server URL (e.g., https://api.godcomfortword.com). ` +
-      `Requested URL: ${url}`;
+    const errorMessage = "API 경로 없음(배포/라우팅 확인)";
+    console.error(`[apiRequest Error] Received HTML instead of JSON, URL: ${url}, Response (HTML):`, responseText.substring(0, 500));
     throw new Error(errorMessage);
   }
 
@@ -174,6 +213,7 @@ export function apiPut(path: string, body?: unknown) {
 export function apiDelete(path: string) {
   return apiRequest(path, { method: "DELETE" });
 }
+
 
 
 

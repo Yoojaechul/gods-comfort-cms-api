@@ -154,3 +154,4 @@ npm run preview
 2. `npm run build` 오류 메시지 확인
 3. 환경 변수 설정 확인 (`.env` 파일)
 
+

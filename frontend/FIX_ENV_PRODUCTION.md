@@ -65,3 +65,6 @@ Network 탭에서 실제 요청 URL 확인:
 - ✅ 올바름: `https://api.godcomfortword.com/creator/videos`
 - ❌ 잘못됨: `https://cms.godcomfortword.com/creator/videos`
 
+
+
+

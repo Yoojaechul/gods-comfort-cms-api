@@ -151,3 +151,6 @@ if (isHtmlResponse || isHtmlContent) {
 - `API_FIX_EXPLANATION.md`: API 호출 수정 설명
 - `FIREBASE_HOSTING_ANALYSIS.md`: Firebase Hosting 설정 분석
 
+
+
+

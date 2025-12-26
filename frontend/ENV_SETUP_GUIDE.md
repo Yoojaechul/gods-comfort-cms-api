@@ -265,3 +265,6 @@ VITE_CMS_API_BASE_URL=https://api.godcomfortword.com npm run build
 - 환경 변수를 변경한 후에는 반드시 다시 빌드해야 합니다
 - `.env.production` 파일이 없으면 빌드 시 에러가 발생할 수 있습니다
 
+
+
+

@@ -315,3 +315,6 @@ firebase deploy --only hosting
 
 **현재 firebase.json 설정은 올바릅니다.** 프론트엔드가 별도 API 서버(`api.godcomfortword.com`)를 사용하므로, Firebase Hosting은 SPA만 제공하면 됩니다. API 경로에 대한 특별한 처리나 rewrite 규칙이 필요하지 않습니다.
 
+
+
+

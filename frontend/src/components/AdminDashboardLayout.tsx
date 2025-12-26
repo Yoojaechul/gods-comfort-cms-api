@@ -1,10 +1,20 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import "../styles/admin-layout.css";
 
 export default function AdminDashboardLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleChangePasswordClick = () => {
+    const email = user?.email || "";
+    if (email) {
+      navigate(`/change-password?email=${encodeURIComponent(email)}`);
+    } else {
+      navigate("/change-password");
+    }
+  };
 
   const menuItems = [
     { path: "/admin/dashboard", label: "Dashboard", icon: "📊" },
@@ -48,6 +58,29 @@ export default function AdminDashboardLayout() {
               <span>{item.label}</span>
             </NavLink>
           ))}
+          {/* 비밀번호 변경 메뉴 (admin role일 때 항상 표시) */}
+          {user?.role === "admin" && (
+            <button
+              onClick={handleChangePasswordClick}
+              className={`admin-menu-item ${location.pathname === "/change-password" ? "active" : ""}`}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                padding: "12px 16px",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                textAlign: "left",
+                fontSize: "14px",
+                color: "inherit",
+              }}
+            >
+              <span>🔒</span>
+              <span>비밀번호 변경</span>
+            </button>
+          )}
         </nav>
       </aside>
 

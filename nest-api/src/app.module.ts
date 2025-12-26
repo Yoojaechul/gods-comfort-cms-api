@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
 import { VideosModule } from './videos/videos.module';
@@ -8,6 +9,7 @@ import { FacebookKeyModule } from './facebook-key/facebook-key.module';
 import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
+  controllers: [AppController],
   imports: [
     // 환경변수 설정
     ConfigModule.forRoot({

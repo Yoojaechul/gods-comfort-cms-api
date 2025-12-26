@@ -1,33 +1,41 @@
 // frontend/src/config.ts
 // CMS API Base URL (배포/로컬 모두 여기 기준으로 통일)
 // 환경변수 우선순위: VITE_CMS_API_BASE_URL > VITE_API_BASE_URL
-// 프로덕션에서는 반드시 환경 변수를 설정해야 합니다.
 // 
-// 빌드 방법:
-//   VITE_API_BASE_URL=https://api.godcomfortword.com npm run build
-// 또는 .env.production 파일에 설정:
-//   VITE_API_BASE_URL=https://api.godcomfortword.com
+// 중요: 프로덕션 배포 시 반드시 VITE_API_BASE_URL 환경 변수를 설정해야 합니다.
+// 환경 변수가 없으면 임시 fallback으로 Cloud Run URL을 사용하되 콘솔 경고를 출력합니다.
+//
+// 설정 방법:
+//   .env.production 파일: VITE_API_BASE_URL=https://api.godcomfortword.com
+//   또는 빌드 시: VITE_API_BASE_URL=https://api.godcomfortword.com npm run build
 //
 // 중요: API_BASE_URL은 반드시 SPA 호스팅 도메인과 다른 별도의 API 서버 주소여야 합니다.
-// 예: SPA는 https://cms.godcomfortword.com, API는 https://api.godcomfortword.com
+
+// 임시 fallback (환경 변수가 없을 때만 사용, 콘솔 경고와 함께)
+const FALLBACK_API_BASE = "https://cms-api-388547952090.asia-northeast3.run.app";
 
 const getApiBase = (): string => {
   const env = import.meta.env;
-  // vite.config.ts와 동일한 우선순위
+  // 환경 변수 우선순위: VITE_CMS_API_BASE_URL > VITE_API_BASE_URL
   const apiBase = env.VITE_CMS_API_BASE_URL || env.VITE_API_BASE_URL || "";
   
   // 빈 문자열이 아닌 경우만 반환 (공백만 있어도 제거 후 확인)
   const trimmed = apiBase.trim();
   if (!trimmed) {
-    // 프로덕션 빌드 시 환경 변수가 없으면 명확한 에러 메시지
+    // 환경 변수가 없으면 임시 fallback 사용 (콘솔 경고와 함께)
     if (typeof window !== "undefined") {
-      console.error(
-        "[config] VITE_CMS_API_BASE_URL 또는 VITE_API_BASE_URL이 설정되지 않았습니다. " +
-        "프로덕션에서는 API 서버의 base URL을 반드시 설정해야 합니다. " +
-        "빌드 시 환경 변수를 설정하세요: VITE_API_BASE_URL=https://api.godcomfortword.com npm run build"
-      );
+      const isProduction = window.location.hostname !== "localhost" && 
+                           window.location.hostname !== "127.0.0.1";
+      if (isProduction) {
+        console.warn(
+          "[config] ⚠️ VITE_API_BASE_URL 환경 변수가 설정되지 않았습니다. " +
+          "임시로 Cloud Run 서비스를 사용합니다:",
+          FALLBACK_API_BASE,
+          "\n프로덕션 배포 시 반드시 .env.production 파일에 VITE_API_BASE_URL을 설정하세요."
+        );
+      }
     }
-    return "";
+    return FALLBACK_API_BASE;
   }
   
   // HTTP/HTTPS로 시작하는지 확인 (프로덕션 안전성)
@@ -58,8 +66,7 @@ const getApiBase = (): string => {
       const errorMessage = 
         `API_BASE_URL cannot point to SPA hosting domain. ` +
         `Current value: ${trimmed}. ` +
-        `Please set VITE_CMS_API_BASE_URL or VITE_API_BASE_URL to a separate API server ` +
-        `(e.g., https://api.godcomfortword.com). ` +
+        `Please set VITE_CMS_API_BASE_URL or VITE_API_BASE_URL to a separate API server. ` +
         `SPA hosting domain (${trimmed}) cannot serve API endpoints.`;
       
       console.error(`[config] ${errorMessage}`);
@@ -79,8 +86,7 @@ const getApiBase = (): string => {
       if (apiHostname === currentHost && currentHost !== "localhost" && currentHost !== "127.0.0.1") {
         throw new Error(
           `API_BASE_URL cannot point to the same domain as the SPA (${currentHost}). ` +
-          `Please set VITE_CMS_API_BASE_URL or VITE_API_BASE_URL to a separate API server ` +
-          `(e.g., https://api.godcomfortword.com). ` +
+          `Please set VITE_CMS_API_BASE_URL or VITE_API_BASE_URL to a separate API server. ` +
           `Current: ${trimmed}`
         );
       }

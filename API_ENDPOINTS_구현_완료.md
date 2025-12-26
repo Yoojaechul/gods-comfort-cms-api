@@ -365,3 +365,4 @@ curl -X GET https://cms.godcomfortword.com/creator/videos \
 - [x] DB 업데이트 확인
 - [x] 보안 기능 구현 (인증, 권한 확인)
 
+

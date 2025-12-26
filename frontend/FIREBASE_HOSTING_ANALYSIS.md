@@ -373,3 +373,6 @@ Firebase Hosting은 SPA만 제공하고, API는 별도 서버에서 제공하는
 - ✅ 프론트엔드 = 환경 변수로 API 서버 주소 설정
 - ✅ firebase.json = 변경 불필요
 
+
+
+

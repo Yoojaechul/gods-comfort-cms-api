@@ -75,3 +75,4 @@ firebase deploy --only functions:api
 - [x] GET /health - 헬스 체크
 - [x] 모든 에러 응답 - JSON 형식 (HTML 없음)
 
+

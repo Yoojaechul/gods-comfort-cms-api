@@ -192,3 +192,4 @@ firebase emulators:start --only functions
 - Firebase Functions 메모리: 기본 256MB, 최대 8GB
 - Firebase Functions 리전: `us-central1` (기본값)
 
+

@@ -168,3 +168,4 @@ npm run dev
 백엔드: http://localhost:8080 (또는 설정된 포트)  
 프론트엔드: http://localhost:5173 (Vite 기본 포트)
 
+

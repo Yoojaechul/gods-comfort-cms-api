@@ -261,3 +261,6 @@ Firebase Hosting은 **정적 파일만 제공**할 수 있습니다. API를 제�
 
 Firebase Hosting은 SPA만 제공하고, API는 별도 서버에서 제공하는 구조가 가장 단순하고 효율적입니다.
 
+
+
+

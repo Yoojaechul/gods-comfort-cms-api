@@ -4,6 +4,7 @@ import {
   ArgumentsHost,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ALLOWED_ORIGINS } from '../constants/cors.constants';
@@ -17,6 +18,7 @@ import { ALLOWED_ORIGINS } from '../constants/cors.constants';
  */
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger(HttpExceptionFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
@@ -34,17 +36,33 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? exception.getResponse()
         : 'Internal server error';
 
-    // 에러 로깅 (Cloud Run에서 확인 가능하도록)
+    // 상세 에러 로깅 (Cloud Run에서 확인 가능하도록)
     const errorDetails = exception instanceof Error 
-      ? { message: exception.message, stack: exception.stack }
-      : String(exception);
+      ? { 
+          message: exception.message, 
+          stack: exception.stack,
+          name: exception.name,
+        }
+      : { message: String(exception) };
     
-    console.error(`[ExceptionFilter] ${request.method} ${request.url} - Status: ${status}`, {
-      status,
-      error: errorDetails,
-      origin: request.headers.origin,
-      body: request.body,
-    });
+    // 500 에러는 특히 상세하게 로깅
+    if (status === HttpStatus.INTERNAL_SERVER_ERROR) {
+      this.logger.error(
+        `[ExceptionFilter] 500 Internal Server Error - ${request.method} ${request.url}`,
+      );
+      this.logger.error(`[ExceptionFilter] 에러 타입: ${errorDetails.name || 'Unknown'}`);
+      this.logger.error(`[ExceptionFilter] 에러 메시지: ${errorDetails.message}`);
+      if (errorDetails.stack) {
+        this.logger.error(`[ExceptionFilter] 스택 트레이스:\n${errorDetails.stack}`);
+      }
+      this.logger.error(`[ExceptionFilter] 요청 본문: ${JSON.stringify(request.body || {}, null, 2)}`);
+      this.logger.error(`[ExceptionFilter] 요청 헤더: ${JSON.stringify(request.headers || {}, null, 2)}`);
+    } else {
+      // 400, 401, 404 등은 간단히 로깅
+      this.logger.warn(
+        `[ExceptionFilter] ${status} ${request.method} ${request.url} - ${errorDetails.message}`,
+      );
+    }
 
     // CORS 헤더 설정 (에러 응답에도 필수!)
     // 모든 응답에 CORS 헤더를 명시적으로 추가

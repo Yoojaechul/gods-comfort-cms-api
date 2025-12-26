@@ -65,3 +65,6 @@ firebase deploy --only hosting
 - 환경 변수를 변경한 후에는 반드시 다시 빌드해야 합니다
 - `.env.production` 파일은 프로젝트 루트에 있어야 합니다
 
+
+
+

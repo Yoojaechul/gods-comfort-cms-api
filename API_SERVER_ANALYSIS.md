@@ -314,3 +314,4 @@ https://us-central1-gods-comfort-word.cloudfunctions.net/api
 2. 상대 경로로 요청 → `https://cms.godcomfortword.com/creator/videos`
 3. Firebase Hosting SPA fallback → `/index.html` 반환 → HTML 응답
 
+

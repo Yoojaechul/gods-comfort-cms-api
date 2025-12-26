@@ -242,3 +242,6 @@ VITE_API_BASE_URL=https://cms.godcomfortword.com
 - `window.location.origin` fallback 제거
 - 모든 API 호출이 절대 URL로 생성되도록 보장
 
+
+
+

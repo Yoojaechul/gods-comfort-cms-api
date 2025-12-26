@@ -8,6 +8,9 @@ const { randomBytes, scryptSync } = require("crypto");
 const fs = require("fs");
 const jwt = require("jsonwebtoken");
 
+// [BOOT] Express 엔트리 로드 확인
+console.log("[BOOT] Express entry loaded:", __filename);
+
 // Firebase Admin 초기화
 admin.initializeApp();
 
@@ -135,7 +138,8 @@ function updateUserPassword(userId, passwordHash, salt) {
 
 // Health check
 app.get("/health", (req, res) => {
-  res.json({ ok: true, db: db ? "connected" : "disconnected" });
+  console.log("[REQ]", req.method, req.path);
+  res.json({ ok: true, service: "cms-api", ts: new Date().toISOString() });
 });
 
 // POST /auth/login
@@ -259,6 +263,7 @@ app.post("/auth/check-email", (req, res) => {
 
 // POST /auth/change-password
 app.post("/auth/change-password", (req, res) => {
+  console.log("[REQ]", req.method, req.path);
   try {
     if (!db) {
       return res.status(500).json({
@@ -270,15 +275,15 @@ app.post("/auth/change-password", (req, res) => {
     const { email, currentPassword, newPassword } = req.body;
 
     if (!email || !currentPassword || !newPassword) {
-      return res.status(200).json({
-        ok: false,
+      return res.status(400).json({
+        error: "BAD_REQUEST",
         message: "이메일, 현재 비밀번호, 새 비밀번호를 모두 입력해주세요.",
       });
     }
 
     if (newPassword.length < 8) {
-      return res.status(200).json({
-        ok: false,
+      return res.status(400).json({
+        error: "BAD_REQUEST",
         message: "새 비밀번호는 최소 8자 이상이어야 합니다.",
       });
     }
@@ -287,8 +292,8 @@ app.post("/auth/change-password", (req, res) => {
     const user = findUserByEmail(email.toLowerCase().trim());
 
     if (!user) {
-      return res.status(200).json({
-        ok: false,
+      return res.status(404).json({
+        error: "NOT_FOUND",
         message: "사용자를 찾을 수 없습니다.",
       });
     }
@@ -318,8 +323,8 @@ app.post("/auth/change-password", (req, res) => {
     );
 
     if (!isValid) {
-      return res.status(200).json({
-        ok: false,
+      return res.status(401).json({
+        error: "UNAUTHORIZED",
         message: "현재 비밀번호가 올바르지 않습니다.",
       });
     }

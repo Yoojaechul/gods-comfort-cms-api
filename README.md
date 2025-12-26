@@ -110,13 +110,52 @@ API Key: abc123def456...
 ### 1. Health Check
 
 ```bash
-curl http://localhost:8787/health
+# 로컬
+curl -i http://localhost:8787/health
+
+# 프로덕션
+curl -i https://api.godcomfortword.com/health
 ```
 
 **예상 응답:**
 ```json
-{"ok":true,"time":"2025-12-02T..."}
+{
+  "ok": true,
+  "service": "cms-api",
+  "ts": "2025-01-15T10:30:00.000Z"
+}
 ```
+
+### 1-1. 비밀번호 변경 테스트
+
+```bash
+# 로컬
+curl -i -X POST http://localhost:8787/auth/change-password \
+  -H "Content-Type: application/json" \
+  -d '{"email":"j1dly1@naver.com","currentPassword":"123456789QWER","newPassword":"123456789"}'
+
+# 프로덕션
+curl -i -X POST https://api.godcomfortword.com/auth/change-password \
+  -H "Content-Type: application/json" \
+  -d '{"email":"j1dly1@naver.com","currentPassword":"123456789QWER","newPassword":"123456789"}'
+```
+
+**예상 응답 (성공):**
+```json
+{
+  "ok": true
+}
+```
+
+**예상 응답 (실패 - 현재 비밀번호 불일치):**
+```json
+{
+  "error": "BAD_REQUEST",
+  "message": "Current password is incorrect"
+}
+```
+
+**주의:** 이 엔드포인트는 인증(JWT) 없이 호출 가능하며, `currentPassword` 검증으로 보안을 확보합니다.
 
 ---
 
@@ -673,6 +712,69 @@ node server.js
 ---
 
 ## 🚀 배포
+
+### Cloud Run 배포
+
+자세한 내용은 **DEPLOY_COMMANDS.md**를 참고하세요.
+
+#### 배포 전 확인사항
+
+1. **초기 계정 생성**
+   ```bash
+   # 로컬에서 실행하여 계정 생성/업데이트
+   node setup-initial-accounts.js
+   ```
+
+2. **배포 환경에서도 초기 계정 생성 필요**
+   
+   Cloud Run은 컨테이너 파일시스템이 ephemeral이므로, 배포 후에도 초기 계정을 생성해야 합니다.
+   
+   **방법 1: Cloud Run 환경 변수 사용 (권장)**
+   
+   Cloud Run 서비스에 다음 환경 변수를 설정:
+   ```powershell
+   gcloud run services update cms-api `
+     --set-env-vars "ADMIN_EMAIL=consulting_manager@naver.com,ADMIN_PASSWORD=123456,CREATOR_EMAIL=j1dly1@naver.com,CREATOR_PASSWORD=123456789QWER" `
+     --region asia-northeast3
+   ```
+   
+   `server.js`는 시작 시 `ensureAdminFromEnv()`와 `ensureCreatorFromEnv()`를 호출하여 자동으로 계정을 생성/업데이트합니다.
+   
+   **방법 2: Cloud Run Job으로 setup-initial-accounts.js 실행**
+   
+   ```powershell
+   # Cloud Run Job 생성 (한 번만 실행)
+   gcloud run jobs create setup-accounts `
+     --image gcr.io/esoteric-throne-471613-j6/cms-api:latest `
+     --region asia-northeast3 `
+     --set-env-vars "DB_PATH=/tmp/cms.db" `
+     --command "node" `
+     --args "setup-initial-accounts.js"
+   
+   # Job 실행
+   gcloud run jobs execute setup-accounts --region asia-northeast3
+   ```
+   
+   **주의:** Cloud Run은 ephemeral 파일시스템이므로 컨테이너 재시작 시 DB가 초기화될 수 있습니다. 환경 변수로 자동 생성하는 방식(방법 1)이 가장 안정적입니다.
+
+3. **버전 확인**
+   
+   배포 후 `/health` 엔드포인트에서 버전 정보 확인:
+   ```bash
+   curl https://api.godcomfortword.com/health
+   ```
+   
+   응답 예시:
+   ```json
+   {
+     "status": "ok",
+     "service": "cms-api",
+     "message": "CMS API is running",
+     "version": "1.0.0",
+     "buildTime": "2025-01-15T10:30:00.000Z",
+     "gitHash": "abc1234"
+   }
+   ```
 
 ### Render.com
 1. GitHub에 코드 푸시

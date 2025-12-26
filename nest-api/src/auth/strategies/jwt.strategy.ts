@@ -18,6 +18,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly configService: ConfigService,
     private readonly authService: AuthService,
   ) {
+    // JWT_SECRET 필수 체크
+    if (!process.env.JWT_SECRET) {
+      console.error('[FATAL] JWT_SECRET is not defined');
+      throw new Error('JWT_SECRET is required');
+    }
+
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         // 1. Authorization Bearer 헤더에서 토큰 추출
@@ -31,7 +37,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         },
       ]),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET'),
+      secretOrKey: process.env.JWT_SECRET,
     });
   }
 

@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Request, ForbiddenException } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, Request, ForbiddenException, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -16,6 +16,8 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(private readonly authService: AuthService) {}
 
   /**
@@ -53,24 +55,34 @@ export class AuthController {
   })
   @ApiResponse({ status: 401, description: '잘못된 사용자명 또는 비밀번호' })
   async login(@Body() loginDto: LoginDto) {
+    const identifier = loginDto.username || loginDto.email || 'unknown';
+    this.logger.log(`[LOGIN] 로그인 시도 시작: ${identifier}`);
+
     try {
-      console.log('[POST /auth/login] 요청 수신:', { 
-        email: loginDto.email, 
-        username: loginDto.username,
-        hasPassword: !!loginDto.password 
-      });
-      
       const result = await this.authService.login(loginDto);
-      
-      console.log('[POST /auth/login] 로그인 성공:', { 
-        userId: result.user?.id, 
-        role: result.user?.role 
-      });
-      
+      this.logger.log(`[LOGIN] 로그인 성공: ${result.user?.id} (${result.user?.role})`);
       return result;
     } catch (error) {
+      // 상세 에러 로깅 (스택 트레이스 포함)
+      this.logger.error(
+        `[LOGIN] 로그인 실패: ${identifier}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      this.logger.error(`[LOGIN] 에러 타입: ${error?.constructor?.name || 'Unknown'}`);
+      this.logger.error(`[LOGIN] 에러 메시지: ${error instanceof Error ? error.message : String(error)}`);
+      
+      // 원인별 상세 로깅
+      if (error instanceof Error) {
+        if (error.message.includes('Invalid username/email or password')) {
+          this.logger.warn(`[LOGIN] 인증 실패 - 사용자 없음 또는 비밀번호 불일치: ${identifier}`);
+        } else if (error.message.includes('비밀번호가 설정되지 않았습니다')) {
+          this.logger.warn(`[LOGIN] 비밀번호 미설정 계정: ${identifier}`);
+        } else if (error.message.includes('DB') || error.message.includes('database')) {
+          this.logger.error(`[LOGIN] DB 연결/쿼리 오류 발생`);
+        }
+      }
+      
       // 에러를 다시 throw하여 Exception Filter가 처리하도록 함
-      console.error('[POST /auth/login] 에러 발생:', error);
       throw error;
     }
   }
@@ -158,9 +170,8 @@ export class AuthController {
   }
 
   /**
-   * 비밀번호 변경 (이메일 기반, JWT 불필요)
-   * 역할 체크: admin 또는 creator만 가능
-   * DB 업데이트: 현재 비밀번호 검증 후 새 비밀번호 해시하여 업데이트
+   * 비밀번호 변경 (이메일 기반, JWT 인증 없음)
+   * email + currentPassword로 사용자 인증 후 비밀번호 변경
    */
   @Post('change-password')
   @ApiOperation({ summary: '비밀번호 변경 (이메일 기반)' })
@@ -169,47 +180,64 @@ export class AuthController {
     description: '비밀번호 변경 성공',
     schema: {
       example: {
-        ok: true,
+        success: true,
+        message: '비밀번호가 성공적으로 변경되었습니다.',
       },
     },
   })
-  @ApiResponse({
-    status: 200,
-    description: '비밀번호 변경 실패',
-    schema: {
-      example: {
-        ok: false,
-        error: 'INVALID_PASSWORD',
-        message: '현재 비밀번호가 올바르지 않습니다.',
-      },
-    },
-  })
-  @ApiResponse({
-    status: 403,
-    description: '권한 없음 (admin/creator만 가능)',
-    schema: {
-      example: {
-        statusCode: 403,
-        error: 'FORBIDDEN',
-        message: '비밀번호 변경은 관리자 또는 크리에이터 계정만 가능합니다.',
-      },
-    },
-  })
-  async changePassword(@Body() changePasswordDto: ChangePasswordEmailDto) {
-    const result = await this.authService.changePasswordByEmail(
-      changePasswordDto.email,
-      changePasswordDto.currentPassword,
-      changePasswordDto.newPassword,
-    );
+  @ApiResponse({ status: 400, description: '현재 비밀번호가 올바르지 않음 또는 잘못된 요청' })
+  @ApiResponse({ status: 403, description: '권한 없음 (admin/creator만 가능)' })
+  @ApiResponse({ status: 404, description: '사용자를 찾을 수 없음' })
+  async changePassword(@Body() changePasswordEmailDto: ChangePasswordEmailDto) {
+    const { email } = changePasswordEmailDto;
+    this.logger.log(`[CHANGE_PASSWORD] 비밀번호 변경 시도 시작: ${email}`);
 
-    // ok: false인 경우에도 200으로 반환하되, ok 필드로 성공/실패 구분
-    // 프론트엔드에서 ok 필드를 확인하여 처리
-    // 역할 체크 실패는 서비스에서 ForbiddenException을 던져서 자동으로 403 반환
-    return result;
+    try {
+      const result = await this.authService.changePasswordByEmail(
+        changePasswordEmailDto.email,
+        changePasswordEmailDto.currentPassword,
+        changePasswordEmailDto.newPassword,
+      );
+
+      if (!result.ok) {
+        // 사용자를 찾을 수 없는 경우 404
+        if (result.message === '사용자를 찾을 수 없습니다.') {
+          this.logger.warn(`[CHANGE_PASSWORD] 사용자 없음: ${email}`);
+          throw new NotFoundException(result.message);
+        }
+        // 그 외의 경우 400
+        this.logger.warn(`[CHANGE_PASSWORD] 실패: ${email} - ${result.message}`);
+        throw new BadRequestException(result.message || '비밀번호 변경에 실패했습니다.');
+      }
+
+      this.logger.log(`[CHANGE_PASSWORD] 비밀번호 변경 성공: ${email}`);
+      return {
+        success: true,
+        message: '비밀번호가 성공적으로 변경되었습니다.',
+      };
+    } catch (error) {
+      // NotFoundException, BadRequestException은 그대로 전달
+      if (error instanceof NotFoundException || error instanceof BadRequestException || error instanceof ForbiddenException) {
+        throw error;
+      }
+
+      // 예상치 못한 에러는 상세 로깅
+      this.logger.error(
+        `[CHANGE_PASSWORD] 예상치 못한 에러 발생: ${email}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      this.logger.error(`[CHANGE_PASSWORD] 에러 타입: ${error?.constructor?.name || 'Unknown'}`);
+      this.logger.error(`[CHANGE_PASSWORD] 에러 메시지: ${error instanceof Error ? error.message : String(error)}`);
+      
+      // 클라이언트에는 일반적인 메시지만 반환 (보안)
+      throw new BadRequestException('비밀번호 변경 중 오류가 발생했습니다.');
+    }
   }
 
   /**
-   * 비밀번호 변경 (JWT 기반, 기존 방식 유지)
+   * 비밀번호 변경 (JWT 기반)
+   * 역할 체크: admin 또는 creator만 가능
+   * DB 업데이트: 현재 비밀번호 검증 후 새 비밀번호 해시하여 업데이트
    */
   @Post('change-password-jwt')
   @UseGuards(JwtAuthGuard)
@@ -232,15 +260,13 @@ export class AuthController {
     @Body() changePasswordDto: ChangePasswordDto,
     @Request() req: any,
   ) {
-    // ChangePasswordDto에 email이 선택적으로 포함될 수 있음
-    const email = (changePasswordDto as any).email;
     return this.authService.changePassword(
       req.user.id,
       changePasswordDto.current_password,
       changePasswordDto.new_password,
-      email,
     );
   }
+
 }
 
 

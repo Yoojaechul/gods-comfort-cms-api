@@ -1,27 +1,26 @@
-import db, { hashPassword, generateId, hashApiKey, generateApiKey } from "./db.js";
+import db, { generateId, hashApiKey, generateApiKey } from "./db.js";
 import { config } from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import crypto from "crypto";
 
 // .env 파일 로드
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 config({ path: path.join(__dirname, ".env") });
 
-console.log("🔧 초기 계정 설정 시작...\n");
-
-// ===== 유틸: users 테이블에 특정 컬럼이 있는지 확인 (스키마 변화에 안전) =====
-function hasUserColumn(columnName) {
-  try {
-    const cols = db.prepare("PRAGMA table_info(users)").all();
-    return cols.some((c) => c.name === columnName);
-  } catch (e) {
-    console.warn("⚠️ PRAGMA table_info(users) 확인 실패:", e?.message || e);
-    return false;
-  }
+// ✅ server.js와 동일한 pbkdf2 해시 함수 (재사용)
+function pbkdf2HashPassword(password) {
+  const iterations = 100_000;
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.pbkdf2Sync(password, salt, iterations, 64, "sha512").toString("hex");
+  // 저장 포맷: pbkdf2$iterations$salt$hash
+  return `pbkdf2$${iterations}$${salt}$${hash}`;
 }
 
-const HAS_PASSWORD_SALT = hasUserColumn("password_salt");
+console.log("🔧 초기 계정 설정 시작...\n");
+
+// password_salt 컬럼은 server.js에서 사용하지 않으므로 제거
 
 // 환경변수에서 계정 정보 가져오기 (기본값 제공)
 // ✅ 원하시는 기본값으로 고정(환경변수로 덮어쓰기는 가능)
@@ -29,7 +28,7 @@ const adminEmail = process.env.CMS_TEST_ADMIN_EMAIL || "consulting_manager@naver
 const adminUsername = process.env.CMS_TEST_ADMIN_USERNAME || "admin";
 const adminPassword = process.env.CMS_TEST_ADMIN_PASSWORD || "123456";
 
-const creatorEmail = process.env.CMS_TEST_CREATOR_EMAIL || "j1d1y1@naver.com";
+const creatorEmail = process.env.CMS_TEST_CREATOR_EMAIL || "j1dly1@naver.com";
 const creatorUsername = process.env.CMS_TEST_CREATOR_USERNAME || "creator";
 // ✅ 여기 핵심 수정: 기본 비번을 123456789QWER로
 const creatorPassword = process.env.CMS_TEST_CREATOR_PASSWORD || "123456789QWER";
@@ -56,43 +55,24 @@ if (!existingAdmin) {
   const adminApiKey = generateApiKey();
   const { hash: adminKeyHash, salt: adminKeySalt } = hashApiKey(adminApiKey);
 
-  // Password Hash
-  const { hash: passwordHash, salt: passwordSalt } = hashPassword(adminPassword);
+  // Password Hash (server.js와 동일한 pbkdf2 형식)
+  const passwordHash = pbkdf2HashPassword(adminPassword);
 
-  if (HAS_PASSWORD_SALT) {
-    db.prepare(
-      `INSERT INTO users 
-       (id, site_id, name, email, password_hash, password_salt, role, status, api_key_hash, api_key_salt) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      adminId,
-      null, // admin은 전체 사이트 접근 개념이면 NULL 유지
-      adminUsername,
-      adminEmail,
-      passwordHash,
-      passwordSalt,
-      "admin",
-      "active",
-      adminKeyHash,
-      adminKeySalt
-    );
-  } else {
-    db.prepare(
-      `INSERT INTO users 
-       (id, site_id, name, email, password_hash, role, status, api_key_hash, api_key_salt) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      adminId,
-      null,
-      adminUsername,
-      adminEmail,
-      passwordHash,
-      "admin",
-      "active",
-      adminKeyHash,
-      adminKeySalt
-    );
-  }
+  db.prepare(
+    `INSERT INTO users 
+     (id, site_id, name, email, password_hash, role, status, api_key_hash, api_key_salt) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    adminId,
+    null, // admin은 전체 사이트 접근 개념이면 NULL 유지
+    adminUsername,
+    adminEmail,
+    passwordHash,
+    "admin",
+    "active",
+    adminKeyHash,
+    adminKeySalt
+  );
 
   console.log("\n" + "=".repeat(70));
   console.log("✅ 관리자 계정 생성 완료!");
@@ -104,33 +84,18 @@ if (!existingAdmin) {
   console.log("=".repeat(70));
 } else {
   // 기존 계정 업데이트 (비밀번호 덮어쓰기)
-  const { hash: passwordHash, salt: passwordSalt } = hashPassword(adminPassword);
+  const passwordHash = pbkdf2HashPassword(adminPassword);
 
-  // ✅ 버그 수정: api_key_salt에 passwordSalt 넣지 않음
-  if (HAS_PASSWORD_SALT) {
-    db.prepare(
-      `UPDATE users
-       SET name = ?,
-           email = ?,
-           password_hash = ?,
-           password_salt = ?,
-           status = 'active',
-           role = 'admin',
-           site_id = NULL
-       WHERE id = ?`
-    ).run(adminUsername, adminEmail, passwordHash, passwordSalt, existingAdmin.id);
-  } else {
-    db.prepare(
-      `UPDATE users
-       SET name = ?,
-           email = ?,
-           password_hash = ?,
-           status = 'active',
-           role = 'admin',
-           site_id = NULL
-       WHERE id = ?`
-    ).run(adminUsername, adminEmail, passwordHash, existingAdmin.id);
-  }
+  db.prepare(
+    `UPDATE users
+     SET name = ?,
+         email = ?,
+         password_hash = ?,
+         status = 'active',
+         role = 'admin',
+         site_id = NULL
+     WHERE id = ?`
+  ).run(adminUsername, adminEmail, passwordHash, existingAdmin.id);
 
   console.log("\n" + "=".repeat(70));
   console.log("✅ 관리자 계정 업데이트 완료!");
@@ -155,43 +120,24 @@ if (!existingCreator) {
   const creatorApiKey = generateApiKey();
   const { hash: creatorKeyHash, salt: creatorKeySalt } = hashApiKey(creatorApiKey);
 
-  // Password Hash
-  const { hash: passwordHash, salt: passwordSalt } = hashPassword(creatorPassword);
+  // Password Hash (server.js와 동일한 pbkdf2 형식)
+  const passwordHash = pbkdf2HashPassword(creatorPassword);
 
-  if (HAS_PASSWORD_SALT) {
-    db.prepare(
-      `INSERT INTO users 
-       (id, site_id, name, email, password_hash, password_salt, role, status, api_key_hash, api_key_salt) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      creatorId,
-      "gods",
-      creatorUsername,
-      creatorEmail,
-      passwordHash,
-      passwordSalt,
-      "creator",
-      "active",
-      creatorKeyHash,
-      creatorKeySalt
-    );
-  } else {
-    db.prepare(
-      `INSERT INTO users 
-       (id, site_id, name, email, password_hash, role, status, api_key_hash, api_key_salt) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      creatorId,
-      "gods",
-      creatorUsername,
-      creatorEmail,
-      passwordHash,
-      "creator",
-      "active",
-      creatorKeyHash,
-      creatorKeySalt
-    );
-  }
+  db.prepare(
+    `INSERT INTO users 
+     (id, site_id, name, email, password_hash, role, status, api_key_hash, api_key_salt) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    creatorId,
+    "gods",
+    creatorUsername,
+    creatorEmail,
+    passwordHash,
+    "creator",
+    "active",
+    creatorKeyHash,
+    creatorKeySalt
+  );
 
   console.log("\n" + "=".repeat(70));
   console.log("✅ 크리에이터 계정 생성 완료!");
@@ -203,33 +149,18 @@ if (!existingCreator) {
   console.log("=".repeat(70));
 } else {
   // 기존 계정 업데이트 (비밀번호 덮어쓰기)
-  const { hash: passwordHash, salt: passwordSalt } = hashPassword(creatorPassword);
+  const passwordHash = pbkdf2HashPassword(creatorPassword);
 
-  // ✅ 버그 수정: api_key_salt에 passwordSalt 넣지 않음
-  if (HAS_PASSWORD_SALT) {
-    db.prepare(
-      `UPDATE users
-       SET name = ?,
-           email = ?,
-           password_hash = ?,
-           password_salt = ?,
-           status = 'active',
-           role = 'creator',
-           site_id = 'gods'
-       WHERE id = ?`
-    ).run(creatorUsername, creatorEmail, passwordHash, passwordSalt, existingCreator.id);
-  } else {
-    db.prepare(
-      `UPDATE users
-       SET name = ?,
-           email = ?,
-           password_hash = ?,
-           status = 'active',
-           role = 'creator',
-           site_id = 'gods'
-       WHERE id = ?`
-    ).run(creatorUsername, creatorEmail, passwordHash, existingCreator.id);
-  }
+  db.prepare(
+    `UPDATE users
+     SET name = ?,
+         email = ?,
+         password_hash = ?,
+         status = 'active',
+         role = 'creator',
+         site_id = 'gods'
+     WHERE id = ?`
+  ).run(creatorUsername, creatorEmail, passwordHash, existingCreator.id);
 
   console.log("\n" + "=".repeat(70));
   console.log("✅ 크리에이터 계정 업데이트 완료!");

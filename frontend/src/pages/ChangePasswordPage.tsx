@@ -1,11 +1,17 @@
 import React, { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiPost } from "../lib/apiClient";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function ChangePasswordPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const email = searchParams.get("email") || "";
+  const { user } = useAuth();
+  
+  // email 파라미터 안정적 처리: query parameter 우선, 없으면 AuthContext의 user.email 사용
+  const emailFromQuery = searchParams.get("email")?.trim() || "";
+  const emailFromUser = user?.email?.trim() || "";
+  const email = emailFromQuery || emailFromUser;
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -58,6 +64,7 @@ export default function ChangePasswordPage() {
       }
 
       // 비밀번호 변경 요청 (email + currentPassword + newPassword)
+      // 반드시 /auth/change-password 엔드포인트로 요청 (프론트 라우팅 /change-password와 구분)
       const payload = {
         email: email.trim(),
         currentPassword: currentPassword.trim(),
@@ -76,35 +83,16 @@ export default function ChangePasswordPage() {
         navigate("/login", { replace: true });
       }, 2000);
     } catch (e: any) {
-      // API 에러 메시지 파싱
-      let errorMessage = "비밀번호 변경에 실패했습니다.";
+      // API 에러 메시지는 apiClient.ts에서 이미 처리되어 전달됨
+      // apiClient.ts에서 상태 코드별 사용자 친화적인 메시지와 console.error 출력이 처리됨
+      const errorMessage = e?.message || "비밀번호 변경에 실패했습니다.";
       
-      if (e?.message) {
-        const errorText = e.message;
-        
-        // API endpoint mismatch 에러 (HTML 응답 받은 경우)
-        if (errorText.includes("API endpoint mismatch") || errorText.includes("received HTML")) {
-          errorMessage = "API endpoint mismatch (received HTML). Check API_BASE_URL.";
-        } else if (errorText.includes("현재 비밀번호") || errorText.includes("current_password") || errorText.includes("currentPassword")) {
-          errorMessage = "현재 비밀번호가 올바르지 않습니다.";
-        } else if (errorText.includes("401") || errorText.includes("인증") || errorText.includes("Unauthorized")) {
-          errorMessage = "인증이 만료되었습니다. 다시 로그인해주세요.";
-          setTimeout(() => {
-            navigate("/login", { replace: true });
-          }, 2000);
-        } else if (errorText.includes("400") || errorText.includes("Bad Request")) {
-          errorMessage = "입력한 정보를 확인해주세요.";
-        } else if (errorText.includes("404") || errorText.includes("Not Found")) {
-          errorMessage = "API 엔드포인트를 찾을 수 없습니다. 관리자에게 문의하세요.";
-        } else {
-          // HTML 태그 제거 후 짧은 메시지만
-          const cleanText = errorText.replace(/<[^>]*>/g, "").trim();
-          if (cleanText.length > 0 && cleanText.length < 150) {
-            errorMessage = cleanText;
-          } else if (cleanText.length >= 150) {
-            errorMessage = "서버 오류가 발생했습니다. 다시 시도해주세요.";
-          }
-        }
+      // 401 에러인 경우 로그인 페이지로 리다이렉트
+      const status = e?.status;
+      if (status === 401) {
+        setTimeout(() => {
+          navigate("/login", { replace: true });
+        }, 2000);
       }
       
       setError(errorMessage);

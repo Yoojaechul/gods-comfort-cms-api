@@ -4,6 +4,26 @@
  * - CORS / Preflight(OPTIONS) 확실히 처리
  * - /auth/login 실제 구현 (email/password)
  * - Production에서도 ADMIN_EMAIL/ADMIN_PASSWORD로 최초 관리자 생성 가능
+ * 
+ * 주요 라우트:
+ * - GET /health (인증 불필요) -> { ok: true, service: "cms-api", ts: "..." }
+ * - POST /auth/login (인증 불필요) -> { token, user }
+ * - POST /auth/change-password (인증 불필요) -> { ok: true }
+ * - GET /auth/me (JWT required) -> { user }
+ * - GET /creator/videos (JWT required) -> { videos: [...] }
+ * 
+ * 로컬 테스트:
+ *   1. node server.js
+ *   2. curl -i http://localhost:8787/health
+ *   3. curl -i -X POST http://localhost:8787/auth/change-password \
+ *        -H "Content-Type: application/json" \
+ *        -d '{"email":"j1dly1@naver.com","currentPassword":"123456789QWER","newPassword":"123456789"}'
+ * 
+ * 배포 후 확인:
+ *   curl -i https://api.godcomfortword.com/health
+ *   curl -i -X POST https://api.godcomfortword.com/auth/change-password \
+ *     -H "Content-Type: application/json" \
+ *     -d '{"email":"j1dly1@naver.com","currentPassword":"123456789QWER","newPassword":"123456789"}'
  */
 
 import Fastify from "fastify";
@@ -37,6 +57,10 @@ const JWT_EXPIRES_IN_SECONDS = Number(process.env.JWT_EXPIRES_IN_SECONDS || 60 *
 // Production에서도 최초 관리자 만들기 (권장)
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+
+// Creator 계정 자동 생성 (배포 환경용)
+const CREATOR_EMAIL = process.env.CREATOR_EMAIL || "";
+const CREATOR_PASSWORD = process.env.CREATOR_PASSWORD || "";
 
 // ==================== Fastify ====================
 const fastify = Fastify({ logger: true });
@@ -82,11 +106,31 @@ await fastify.register(cors, {
   maxAge: 86400,
 });
 
+// ✅ 공개 라우트 정의 (인증 불필요)
+const PUBLIC_ROUTES = [
+  { method: "GET", path: "/health" },
+  { method: "POST", path: "/auth/change-password" },
+  { method: "POST", path: "/auth/login" },
+  { method: "GET", path: "/" },
+];
+
+function isPublicRoute(req) {
+  return PUBLIC_ROUTES.some(
+    (r) => r.method === req.method && r.path === req.url.split("?")[0]
+  );
+}
+
 // ✅ 전역 OPTIONS 처리 (라우트 없어도 404 방지)
 fastify.addHook("onRequest", async (req, reply) => {
   if (req.method === "OPTIONS") {
     // @fastify/cors가 헤더를 셋업한 뒤 여기로 들어오는 경우가 많음
     return reply.code(204).send();
+  }
+  
+  // 공개 라우트는 인증 미들웨어를 건너뛰도록 표시
+  // (현재 전역 인증 미들웨어는 없지만, 향후 추가 시 대비)
+  if (isPublicRoute(req)) {
+    req.isPublicRoute = true;
   }
 });
 
@@ -258,14 +302,21 @@ function ensureDefaultSiteRow() {
 
 // ==================== Admin Bootstrap ====================
 function ensureAdminFromEnv() {
+  fastify.log.info(`[bootstrap] ensureAdminFromEnv() 시작 - DB_PATH: ${DB_PATH}`);
+  
   // admin 존재하면 스킵
   const admin = db.prepare("SELECT id FROM users WHERE role='admin' LIMIT 1").get();
-  if (admin) return;
+  if (admin) {
+    fastify.log.info(`[bootstrap] Admin 계정 이미 존재 (id: ${admin.id.substring(0, 8)}...)`);
+    return;
+  }
+
+  fastify.log.info(`[bootstrap] Admin 계정 없음 - ADMIN_EMAIL: ${ADMIN_EMAIL ? ADMIN_EMAIL.substring(0, 3) + "***" : "NOT SET"}, ADMIN_PASSWORD: ${ADMIN_PASSWORD ? "SET" : "NOT SET"}`);
 
   // env가 없으면 스킵 (운영에서는 반드시 넣는 것을 권장)
   if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
     fastify.log.warn(
-      "⚠ No admin user exists, and ADMIN_EMAIL/ADMIN_PASSWORD env is not set. Login will fail until an admin is created."
+      "⚠️ [bootstrap] No admin user exists, and ADMIN_EMAIL/ADMIN_PASSWORD env is not set. Login will fail until an admin is created."
     );
     return;
   }
@@ -278,7 +329,49 @@ function ensureAdminFromEnv() {
     VALUES (?, ?, ?, ?, ?, 'active', ?)
   `).run(id, "gods", "Admin", ADMIN_EMAIL, "admin", password_hash);
 
-  fastify.log.info("✅ Admin user created from ENV (ADMIN_EMAIL/ADMIN_PASSWORD).");
+  fastify.log.info(`✅ [bootstrap] Admin user created from ENV (email: ${ADMIN_EMAIL.substring(0, 3)}***)`);
+}
+
+// ==================== Creator Bootstrap ====================
+function ensureCreatorFromEnv() {
+  fastify.log.info(`[bootstrap] ensureCreatorFromEnv() 시작 - DB_PATH: ${DB_PATH}`);
+  fastify.log.info(`[bootstrap] CREATOR_EMAIL: ${CREATOR_EMAIL ? CREATOR_EMAIL.substring(0, 3) + "***" : "NOT SET"}, CREATOR_PASSWORD: ${CREATOR_PASSWORD ? "SET" : "NOT SET"}`);
+  
+  // creator가 이미 존재하면 스킵
+  if (CREATOR_EMAIL) {
+    const existingCreator = db.prepare("SELECT id FROM users WHERE email = ?").get(CREATOR_EMAIL);
+    if (existingCreator) {
+      fastify.log.info(`[bootstrap] Creator 계정 이미 존재 (id: ${existingCreator.id.substring(0, 8)}...)`);
+      // 기존 계정이 있으면 비밀번호 업데이트
+      if (CREATOR_PASSWORD) {
+        const password_hash = pbkdf2HashPassword(CREATOR_PASSWORD);
+        db.prepare(`
+          UPDATE users 
+          SET password_hash = ?, status = 'active', site_id = 'gods'
+          WHERE email = ?
+        `).run(password_hash, CREATOR_EMAIL);
+        fastify.log.info(`✅ [bootstrap] Creator user password updated from ENV (email: ${CREATOR_EMAIL.substring(0, 3)}***)`);
+      }
+      return;
+    }
+
+    // 새 creator 생성
+    if (CREATOR_PASSWORD) {
+      const id = generateId();
+      const password_hash = pbkdf2HashPassword(CREATOR_PASSWORD);
+
+      db.prepare(`
+        INSERT INTO users (id, site_id, name, email, role, status, password_hash)
+        VALUES (?, ?, ?, ?, ?, 'active', ?)
+      `).run(id, "gods", "Creator", CREATOR_EMAIL, "creator", password_hash);
+
+      fastify.log.info(`✅ [bootstrap] Creator user created from ENV (email: ${CREATOR_EMAIL.substring(0, 3)}***)`);
+    } else {
+      fastify.log.warn(`⚠️ [bootstrap] CREATOR_EMAIL은 설정되었지만 CREATOR_PASSWORD가 없습니다.`);
+    }
+  } else {
+    fastify.log.warn(`⚠️ [bootstrap] CREATOR_EMAIL이 설정되지 않았습니다. Creator 계정이 자동 생성되지 않습니다.`);
+  }
 }
 
 // ==================== Auth Guard (선택) ====================
@@ -300,7 +393,13 @@ async function requireAuth(req, reply) {
 // root
 fastify.get("/", async () => ({ service: "cms-api", status: "running" }));
 
-fastify.get("/health", async () => ({ status: "ok", service: "cms-api", message: "CMS API is running" }));
+fastify.get("/health", async () => {
+  return {
+    ok: true,
+    service: "cms-api",
+    ts: new Date().toISOString(),
+  };
+});
 fastify.get("/public/health", async () => ({ status: "ok", service: "cms-api", message: "CMS API is running" }));
 fastify.get("/public/healthz", async () => ({ status: "healthy", timestamp: new Date().toISOString() }));
 
@@ -322,8 +421,19 @@ fastify.post("/auth/login", async (req, reply) => {
     .prepare("SELECT id, site_id, name, email, role, status, password_hash FROM users WHERE email = ? LIMIT 1")
     .get(email);
 
-  // 보안상 "계정 없음/비번 틀림" 구분하지 않음
-  if (!user || user.status !== "active" || !pbkdf2VerifyPassword(password, user.password_hash)) {
+  // 로그인 실패 시 로깅 (보안을 위해 민감 정보 마스킹)
+  if (!user) {
+    fastify.log.warn(`[auth/login] Login failed: user not found (email: ${email.substring(0, 3)}***)`);
+    return reply.code(401).send({ error: "INVALID_CREDENTIALS" });
+  }
+
+  if (user.status !== "active") {
+    fastify.log.warn(`[auth/login] Login failed: inactive user (email: ${email.substring(0, 3)}***, role: ${user.role || "unknown"}, site_id: ${user.site_id ? user.site_id.substring(0, 3) + "***" : "null"})`);
+    return reply.code(401).send({ error: "INVALID_CREDENTIALS" });
+  }
+
+  if (!pbkdf2VerifyPassword(password, user.password_hash)) {
+    fastify.log.warn(`[auth/login] Login failed: password mismatch (email: ${email.substring(0, 3)}***, role: ${user.role || "unknown"}, site_id: ${user.site_id ? user.site_id.substring(0, 3) + "***" : "null"})`);
     return reply.code(401).send({ error: "INVALID_CREDENTIALS" });
   }
 
@@ -348,14 +458,138 @@ fastify.get("/auth/me", { preHandler: requireAuth }, async (req) => {
   return { user: req.user };
 });
 
+/**
+ * ✅ 비밀번호 변경
+ * body: { email, currentPassword, newPassword }
+ * response: { ok: true }
+ */
+fastify.post("/auth/change-password", async (req, reply) => {
+  const body = req.body || {};
+  const email = (body.email || "").toString().trim().toLowerCase();
+  const currentPassword = (body.currentPassword || "").toString();
+  const newPassword = (body.newPassword || "").toString();
+
+  if (!email || !currentPassword || !newPassword) {
+    return reply.code(400).send({ error: "BAD_REQUEST", message: "email, currentPassword, and newPassword are required" });
+  }
+
+  // 새 비밀번호 길이 검증
+  if (newPassword.length < 8) {
+    return reply.code(400).send({ error: "BAD_REQUEST", message: "newPassword must be at least 8 characters" });
+  }
+
+  // 사용자 조회
+  const user = db
+    .prepare("SELECT id, email, role, status, password_hash FROM users WHERE email = ? LIMIT 1")
+    .get(email);
+
+  if (!user) {
+    fastify.log.warn(`[auth/change-password] User not found: ${email.substring(0, 3)}***`);
+    return reply.code(404).send({ error: "NOT_FOUND", message: "User not found" });
+  }
+
+  if (user.status !== "active") {
+    fastify.log.warn(`[auth/change-password] Inactive user: ${email.substring(0, 3)}***`);
+    return reply.code(403).send({ error: "FORBIDDEN", message: "User account is not active" });
+  }
+
+  // admin 또는 creator만 비밀번호 변경 가능
+  if (user.role !== "admin" && user.role !== "creator") {
+    fastify.log.warn(`[auth/change-password] Unauthorized role: ${user.role}`);
+    return reply.code(403).send({ error: "FORBIDDEN", message: "Only admin and creator can change password" });
+  }
+
+  // 비밀번호가 설정되지 않은 경우
+  if (!user.password_hash) {
+    fastify.log.warn(`[auth/change-password] Password not set: ${email.substring(0, 3)}***`);
+    return reply.code(400).send({ error: "BAD_REQUEST", message: "Password not set. Please use setup-password first." });
+  }
+
+  // 현재 비밀번호 검증
+  if (!pbkdf2VerifyPassword(currentPassword, user.password_hash)) {
+    fastify.log.warn(`[auth/change-password] Invalid current password: ${email.substring(0, 3)}***`);
+    return reply.code(400).send({ error: "BAD_REQUEST", message: "Current password is incorrect" });
+  }
+
+  // 새 비밀번호 해시 (기존 pbkdf2HashPassword 함수 재사용)
+  const newPasswordHash = pbkdf2HashPassword(newPassword);
+
+  // 비밀번호 업데이트
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(newPasswordHash, user.id);
+
+  fastify.log.info(`✅ [auth/change-password] Password changed successfully: ${email.substring(0, 3)}***`);
+
+  return reply.send({ ok: true });
+});
+
+/**
+ * Creator 영상 목록 조회 핸들러 (재사용 가능)
+ */
+async function getCreatorVideosHandler(req, reply) {
+  const user = req.user;
+  const siteId = (req.query.site_id || user.site_id || "").toString();
+
+  // Creator는 자신의 site_id만 접근 가능
+  if (user.role === "creator" && siteId !== user.site_id) {
+    return reply.code(403).send({ error: "FORBIDDEN", message: "Access denied to this site_id" });
+  }
+
+  const targetSiteId = siteId || user.site_id;
+
+  // owner_id와 site_id 모두 사용하여 영상 조회
+  const videos = db
+    .prepare("SELECT * FROM videos WHERE site_id = ? AND owner_id = ? ORDER BY created_at DESC")
+    .all(targetSiteId, user.id);
+
+  return { videos: videos || [] };
+}
+
+/**
+ * ✅ Creator 영상 목록 조회
+ * GET /creator/videos?site_id=xxx
+ * JWT 인증 필요
+ */
+fastify.get("/creator/videos", { preHandler: requireAuth }, getCreatorVideosHandler);
+
 // ==================== Boot ====================
 async function start() {
+  fastify.log.info("============================================================");
+  fastify.log.info("🚀 CMS API 서버 시작");
+  fastify.log.info(`📂 DB Path: ${DB_PATH}`);
+  fastify.log.info(`🌍 NODE_ENV: ${NODE_ENV}`);
+  fastify.log.info(`🔐 JWT_SECRET: ${JWT_SECRET ? "SET" : "NOT SET"}`);
+  fastify.log.info("============================================================");
+
+  fastify.log.info("[start] ensureSchema() 실행 중...");
   ensureSchema();
+  fastify.log.info("✅ [start] Schema 확인 완료");
+
+  fastify.log.info("[start] ensureDefaultSiteRow() 실행 중...");
   ensureDefaultSiteRow();
+  fastify.log.info("✅ [start] Default site 확인 완료");
+
+  fastify.log.info("[start] ensureAdminFromEnv() 실행 중...");
   ensureAdminFromEnv();
+  fastify.log.info("✅ [start] Admin 계정 부트스트랩 완료");
+
+  fastify.log.info("[start] ensureCreatorFromEnv() 실행 중...");
+  ensureCreatorFromEnv();
+  fastify.log.info("✅ [start] Creator 계정 부트스트랩 완료");
 
   await fastify.listen({ port: PORT, host: "0.0.0.0" });
-  fastify.log.info(`🚀 CMS API running on port ${PORT}`);
+  
+  fastify.log.info("============================================================");
+  fastify.log.info(`✅ CMS API running on port ${PORT}`);
+  fastify.log.info(`📂 DB Path: ${DB_PATH}`);
+  fastify.log.info(`🌍 NODE_ENV: ${NODE_ENV}`);
+  fastify.log.info(`🔐 JWT_SECRET: ${JWT_SECRET ? "SET" : "NOT SET"}`);
+  fastify.log.info(`📋 주요 라우트:`);
+  fastify.log.info(`   - GET /health (인증 불필요)`);
+  fastify.log.info(`   - POST /auth/login (인증 불필요)`);
+  fastify.log.info(`   - POST /auth/change-password (인증 불필요)`);
+  fastify.log.info(`   - GET /auth/me (JWT required)`);
+  fastify.log.info(`   - GET /creator/videos (JWT required)`);
+  fastify.log.info("============================================================");
 }
 
 start().catch((err) => {

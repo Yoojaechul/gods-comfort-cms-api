@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import "../styles/dashboard-layout.css";
 
@@ -10,8 +10,18 @@ interface CreatorDashboardLayoutProps {
 export default function CreatorDashboardLayout({ children }: CreatorDashboardLayoutProps) {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
 
-  // 크리에이터 메뉴: My Videos만 표시
+  const handleChangePasswordClick = () => {
+    const email = user?.email || "";
+    if (email) {
+      navigate(`/change-password?email=${encodeURIComponent(email)}`);
+    } else {
+      navigate("/change-password");
+    }
+  };
+
+  // 크리에이터 메뉴: My Videos
   const menuItems = [
     { path: "/creator/my-videos", label: "My Videos", icon: "🎬" },
   ];
@@ -49,6 +59,29 @@ export default function CreatorDashboardLayout({ children }: CreatorDashboardLay
               <span>{item.label}</span>
             </NavLink>
           ))}
+          {/* 비밀번호 변경 메뉴 (creator role일 때 항상 표시) */}
+          {user?.role === "creator" && (
+            <button
+              onClick={handleChangePasswordClick}
+              className={`dashboard-menu-item ${location.pathname === "/change-password" ? "active" : ""}`}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                padding: "12px 16px",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                textAlign: "left",
+                fontSize: "14px",
+                color: "inherit",
+              }}
+            >
+              <span>🔒</span>
+              <span>비밀번호 변경</span>
+            </button>
+          )}
         </nav>
       </aside>
 
