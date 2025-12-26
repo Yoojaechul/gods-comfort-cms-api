@@ -1,3 +1,26 @@
+/**
+ * ============================================================================
+ * AuthService - 인증 서비스
+ * ============================================================================
+ * 
+ * [비밀번호 해싱 및 검증 방식]
+ * - 알고리즘: scrypt (crypto.scryptSync)
+ * - password_hash: scrypt(password, salt, 64).toString('hex') (128 hex 길이)
+ * - salt 저장: api_key_salt 컬럼에 저장
+ * - 검증: DatabaseService.verifyPassword() 사용
+ * 
+ * [주의사항]
+ * - Seed와 Login 모두 동일한 scrypt 방식 사용 (통일됨)
+ * - bcrypt는 setupPassword에서만 사용 (레거시 호환)
+ * 
+ * [테스트 방법]
+ * - Windows PowerShell: Invoke-RestMethod 사용 (curl.exe 사용 금지)
+ * - Frontend: fetch / axios 사용
+ * - curl: Linux / WSL 환경에서만 사용
+ * 
+ * ============================================================================
+ */
+
 import {
   Injectable,
   UnauthorizedException,
@@ -29,128 +52,347 @@ export class AuthService implements OnModuleInit {
   ) {}
 
   /**
-   * 모듈 초기화 시 테스트 계정 생성/업데이트
+   * 모듈 초기화 시 seed 계정 자동 생성
+   * - ensureSchema() 이후에 실행되도록 DatabaseService에 의존
+   * - 환경변수로 계정 정보를 받음 (운영용)
+   * - 이미 있으면 skip, 없으면 생성
+   * - SEED_FORCE_PASSWORD_UPDATE=true일 때는 기존 계정도 강제 업데이트
+   * - 트랜잭션으로 처리하여 실패 시 롤백
    */
   async onModuleInit() {
-    this.logger.log('🔧 테스트 계정 초기화 시작...');
+    // DatabaseService의 ensureSchema()가 완료될 때까지 대기
+    // DatabaseService는 OnModuleInit에서 ensureSchema()를 호출하므로
+    // AuthService의 onModuleInit은 DatabaseService 이후에 실행됨
+    this.logger.log('🔧 Seed 계정 초기화 시작...');
 
     try {
       const db = this.databaseService.getDb();
 
-      // 환경변수에서 계정 정보 가져오기
-      const adminEmail =
-        this.configService.get<string>('CMS_TEST_ADMIN_EMAIL') ||
-        'consulting_manager@naver.com';
-      const adminUsername =
-        this.configService.get<string>('CMS_TEST_ADMIN_USERNAME') || 'admin';
-      const adminPassword =
-        this.configService.get<string>('CMS_TEST_ADMIN_PASSWORD') || '123456';
+      // 환경변수에서 계정 정보 가져오기 (CMS_TEST_* 키만 사용, fallback 제거)
+      // ⚠️ 중요: env 없으면 seed를 SKIP하고 WARN 로그만 남김 (프로덕션에서 실수로 랜덤/빈 값으로 업데이트 방지)
+      const adminEmail = this.configService.get<string>('CMS_TEST_ADMIN_EMAIL');
+      const adminPassword = this.configService.get<string>('CMS_TEST_ADMIN_PASSWORD');
+      const adminRole = this.configService.get<string>('ADMIN_ROLE') || 'admin';
 
-      const creatorEmail =
-        this.configService.get<string>('CMS_TEST_CREATOR_EMAIL') ||
-        'j1dly1@naver.com';
-      const creatorUsername =
-        this.configService.get<string>('CMS_TEST_CREATOR_USERNAME') || 'creator';
-      const creatorPassword =
-        this.configService.get<string>('CMS_TEST_CREATOR_PASSWORD') || '123456';
+      const creatorEmail = this.configService.get<string>('CMS_TEST_CREATOR_EMAIL');
+      const creatorPassword = this.configService.get<string>('CMS_TEST_CREATOR_PASSWORD');
+      const creatorRole = this.configService.get<string>('CREATOR_ROLE') || 'creator';
+      const creatorSiteId = this.configService.get<string>('CREATOR_SITE_ID') || 'gods';
 
-      // 비밀번호 해싱 함수 (scrypt 사용)
+      // 실제로 사용한 환경변수 키 이름을 로그로 출력
+      const adminEmailKey = 'CMS_TEST_ADMIN_EMAIL';
+      const adminPasswordKey = 'CMS_TEST_ADMIN_PASSWORD';
+      const creatorEmailKey = 'CMS_TEST_CREATOR_EMAIL';
+      const creatorPasswordKey = 'CMS_TEST_CREATOR_PASSWORD';
+
+      // Seed 시작 로그 (배포에서 seed가 돌았는지 확정하기 위한 상세 로그)
+      this.logger.log(`[SEED] ========================================`);
+      this.logger.log(`[SEED] Seed 계정 초기화 시작`);
+      this.logger.log(`[SEED] SEED_FORCE_PASSWORD_UPDATE=${process.env.SEED_FORCE_PASSWORD_UPDATE || 'undefined (false)'}`);
+      this.logger.log(`[SEED] 환경변수 사용 현황:`);
+      this.logger.log(`  - Admin Email: ${adminEmailKey}=${adminEmail ? this.maskEmail(adminEmail) : '(not set)'}`);
+      this.logger.log(`  - Admin Password: ${adminPasswordKey}=${adminPassword ? '(set, length=' + adminPassword.length + ')' : '(not set)'}`);
+      this.logger.log(`  - Creator Email: ${creatorEmailKey}=${creatorEmail ? this.maskEmail(creatorEmail) : '(not set)'}`);
+      this.logger.log(`  - Creator Password: ${creatorPasswordKey}=${creatorPassword ? '(set, length=' + creatorPassword.length + ')' : '(not set)'}`);
+
+      // ⚠️ 중요: env 없으면 seed를 SKIP하고 명확한 WARN 로그만 남김
+      if (!adminEmail || !adminPassword) {
+        this.logger.warn(`[SEED] ⚠️  SKIP: ${adminEmailKey} 또는 ${adminPasswordKey}가 설정되지 않아 Admin 계정 seed를 SKIP합니다.`);
+        this.logger.warn(`[SEED] ⚠️  프로덕션에서 실수로 랜덤/빈 값으로 업데이트되지 않도록 DB를 건드리지 않습니다.`);
+      }
+      if (!creatorEmail || !creatorPassword) {
+        this.logger.warn(`[SEED] ⚠️  SKIP: ${creatorEmailKey} 또는 ${creatorPasswordKey}가 설정되지 않아 Creator 계정 seed를 SKIP합니다.`);
+        this.logger.warn(`[SEED] ⚠️  프로덕션에서 실수로 랜덤/빈 값으로 업데이트되지 않도록 DB를 건드리지 않습니다.`);
+      }
+
+      // 강제 업데이트 플래그 (기본값: false, SEED_FORCE_PASSWORD_UPDATE=true일 때만 강제 업데이트)
+      const forcePasswordUpdate = this.configService.get<string>('SEED_FORCE_PASSWORD_UPDATE') === 'true';
+      if (forcePasswordUpdate) {
+        this.logger.warn(`[SEED] ⚠️  SEED_FORCE_PASSWORD_UPDATE=true로 설정되어 기존 계정의 비밀번호를 강제 업데이트합니다.`);
+      }
+      this.logger.log(`[SEED] ========================================`);
+
+      // 비밀번호 해싱 함수 (scrypt 사용 - DatabaseService.verifyPassword와 호환)
+      // ⚠️ 중요: password_hash = scryptSync(password, api_key_salt, 64).toString('hex') (128 hex 길이)
+      // api_key_salt는 반드시 password 검증에 쓰이는 salt로 저장 (길이 32 hex 유지)
       const crypto = require('crypto');
       const { scryptSync, randomBytes } = crypto;
 
       const hashPassword = (password: string) => {
+        // salt는 16바이트(32 hex 문자)로 생성
         const salt = randomBytes(16).toString('hex');
+        // hash는 scryptSync(password, salt, 64).toString('hex') (128 hex 문자)
         const hash = scryptSync(password, salt, 64).toString('hex');
         return { hash, salt };
       };
 
-      // Admin 계정 생성/업데이트
-      let existingAdmin = db
-        .prepare('SELECT * FROM users WHERE email = ? OR name = ?')
-        .get(adminEmail, adminUsername) as any;
+      // ✅ 1단계: 기본 site 레코드 upsert (FK 제약 조건을 위해 필수)
+      this.logger.log('📋 1단계: 기본 site 레코드 확인/생성 중...');
+      const defaultSiteId = creatorSiteId || 'gods';
+      try {
+        const existingSite = db
+          .prepare('SELECT id FROM sites WHERE id = ?')
+          .get(defaultSiteId) as any;
 
-      if (!existingAdmin) {
-        // 새로 생성
-        const adminId = randomBytes(16).toString('hex');
-        const adminApiKey = randomBytes(32).toString('hex');
-        const apiKeyHash = scryptSync(adminApiKey, randomBytes(16).toString('hex'), 64).toString('hex');
-        const apiKeySalt = randomBytes(16).toString('hex');
-        const { hash: passwordHash, salt: passwordSalt } = hashPassword(adminPassword);
-
-        db.prepare(
-          'INSERT INTO users (id, site_id, name, email, password_hash, role, status, api_key_hash, api_key_salt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        ).run(
-          adminId,
-          null,
-          adminUsername,
-          adminEmail,
-          passwordHash,
-          'admin',
-          'active',
-          apiKeyHash,
-          apiKeySalt,
-        );
-
-        this.logger.log(`✅ Admin 계정 생성: ${adminEmail} (${adminUsername})`);
-      } else {
-        // 기존 계정 업데이트
-        const { hash: passwordHash, salt: passwordSalt } = hashPassword(adminPassword);
-        db.prepare(
-          "UPDATE users SET name = ?, email = ?, password_hash = ?, api_key_salt = ?, status = 'active', role = 'admin', site_id = NULL WHERE id = ?",
-        ).run(adminUsername, adminEmail, passwordHash, passwordSalt, existingAdmin.id);
-
-        this.logger.log(`✅ Admin 계정 업데이트: ${adminEmail} (${adminUsername})`);
+        if (!existingSite) {
+          db.prepare(
+            `INSERT INTO sites (id, domain, name, homepage_url, api_base, facebook_key, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+          ).run(
+            defaultSiteId,
+            'godcomfortword.com',
+            "God's Comfort Word",
+            'https://www.godcomfortword.com',
+            null,
+            null,
+          );
+          this.logger.log(`✅ Site '${defaultSiteId}' 생성 완료`);
+        } else {
+          this.logger.log(`⏭️  Site '${defaultSiteId}' 이미 존재 (skip)`);
+        }
+      } catch (siteError: any) {
+        this.logger.error(`❌ [1단계 실패] Site '${defaultSiteId}' 생성 실패:`, siteError.message);
+        throw new Error(`Site 생성 실패: ${siteError.message}`);
       }
 
-      // Creator 계정 생성/업데이트
-      let existingCreator = db
-        .prepare('SELECT * FROM users WHERE email = ? OR name = ?')
-        .get(creatorEmail, creatorUsername) as any;
+      // ✅ 2단계: 기존 users의 site_id 복구/마이그레이션
+      this.logger.log('📋 2단계: 기존 users의 site_id 복구/마이그레이션 중...');
+      try {
+        const usersWithInvalidSiteId = db
+          .prepare(
+            `SELECT u.id, u.email, u.site_id 
+             FROM users u 
+             WHERE u.site_id IS NOT NULL 
+             AND NOT EXISTS (SELECT 1 FROM sites s WHERE s.id = u.site_id)`,
+          )
+          .all() as any[];
 
-      if (!existingCreator) {
-        // 새로 생성
-        const creatorId = randomBytes(16).toString('hex');
-        const creatorApiKey = randomBytes(32).toString('hex');
-        const apiKeyHash = scryptSync(creatorApiKey, randomBytes(16).toString('hex'), 64).toString('hex');
-        const apiKeySalt = randomBytes(16).toString('hex');
-        const { hash: passwordHash, salt: passwordSalt } = hashPassword(creatorPassword);
-
-        db.prepare(
-          'INSERT INTO users (id, site_id, name, email, password_hash, role, status, api_key_hash, api_key_salt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        ).run(
-          creatorId,
-          'gods',
-          creatorUsername,
-          creatorEmail,
-          passwordHash,
-          'creator',
-          'active',
-          apiKeyHash,
-          apiKeySalt,
-        );
-
-        this.logger.log(`✅ Creator 계정 생성: ${creatorEmail} (${creatorUsername})`);
-      } else {
-        // 기존 계정 업데이트
-        const { hash: passwordHash, salt: passwordSalt } = hashPassword(creatorPassword);
-        db.prepare(
-          "UPDATE users SET name = ?, email = ?, password_hash = ?, api_key_salt = ?, status = 'active', role = 'creator', site_id = 'gods' WHERE id = ?",
-        ).run(creatorUsername, creatorEmail, passwordHash, passwordSalt, existingCreator.id);
-
-        this.logger.log(`✅ Creator 계정 업데이트: ${creatorEmail} (${creatorUsername})`);
+        if (usersWithInvalidSiteId.length > 0) {
+          this.logger.warn(`⚠️  ${usersWithInvalidSiteId.length}명의 사용자가 유효하지 않은 site_id를 가지고 있습니다. 복구 중...`);
+          for (const user of usersWithInvalidSiteId) {
+            // 유효하지 않은 site_id를 default site로 마이그레이션
+            db.prepare('UPDATE users SET site_id = ? WHERE id = ?').run(defaultSiteId, user.id);
+            this.logger.log(`  ✅ User ${user.email?.substring(0, 3) || user.id.substring(0, 8)}***의 site_id를 '${defaultSiteId}'로 마이그레이션`);
+          }
+        } else {
+          this.logger.log(`⏭️  모든 users의 site_id가 유효합니다 (skip)`);
+        }
+      } catch (migrationError: any) {
+        this.logger.error(`❌ [2단계 실패] site_id 마이그레이션 실패:`, migrationError.message);
+        throw new Error(`site_id 마이그레이션 실패: ${migrationError.message}`);
       }
 
-      this.logger.log('✅ 테스트 계정 초기화 완료');
-    } catch (error) {
-      this.logger.error('❌ 테스트 계정 초기화 실패:', error);
+      // ✅ 3단계: Admin 계정 생성/업데이트 (idempotent - email 기준으로 조회 후 INSERT/UPDATE)
+      if (adminEmail && adminPassword) {
+        this.logger.log(`[SEED] 3단계: Admin 계정 seed 시작 (email: ${adminEmail.substring(0, 3)}***)`);
+        try {
+          const transaction = db.transaction(() => {
+            // email 기준으로 기존 계정 조회 (idempotent 보장)
+            const existingAdmin = db
+              .prepare('SELECT id, email, role, site_id, password_hash, api_key_salt FROM users WHERE email = ?')
+              .get(adminEmail) as any;
+
+            if (!existingAdmin) {
+              // 새로 생성 (INSERT)
+              this.logger.log(`[SEED] Admin 계정 없음 → INSERT 실행`);
+              const adminId = randomBytes(16).toString('hex');
+              const adminApiKey = randomBytes(32).toString('hex');
+              const { hash: passwordHash, salt: passwordSalt } = hashPassword(adminPassword);
+              // passwordSalt를 api_key_salt에 저장 (비밀번호 검증에 사용)
+              const apiKeyHash = scryptSync(adminApiKey, passwordSalt, 64).toString('hex');
+
+              const insertResult = db
+                .prepare(
+                  'INSERT INTO users (id, site_id, name, email, password_hash, role, status, api_key_hash, api_key_salt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                )
+                .run(
+                  adminId,
+                  null, // Admin은 site_id가 null
+                  'Admin',
+                  adminEmail,
+                  passwordHash,
+                  adminRole,
+                  'active',
+                  apiKeyHash,
+                  passwordSalt, // passwordSalt를 api_key_salt에 저장
+                );
+
+              if (insertResult.changes === 0) {
+                throw new Error('Admin 계정 INSERT 실패: changes = 0');
+              }
+
+              this.logger.log(`[SEED] ✅ Admin 계정 INSERT 완료 - affected rows: ${insertResult.changes}, email: ${adminEmail.substring(0, 3)}***, role: ${adminRole}, password_hash 길이: ${passwordHash.length}, api_key_salt 길이: ${passwordSalt.length}`);
+            } else {
+              // 기존 계정이 있는 경우
+              if (forcePasswordUpdate) {
+                // 강제 업데이트: password_hash, api_key_hash, api_key_salt 재생성 (UPDATE)
+                this.logger.log(`[SEED] Admin 계정 존재 + SEED_FORCE_PASSWORD_UPDATE=true → UPDATE 실행`);
+                const adminApiKey = randomBytes(32).toString('hex');
+                const { hash: passwordHash, salt: passwordSalt } = hashPassword(adminPassword);
+                // passwordSalt를 api_key_salt에 저장 (비밀번호 검증에 사용)
+                const apiKeyHash = scryptSync(adminApiKey, passwordSalt, 64).toString('hex');
+
+                const updateResult = db
+                  .prepare(
+                    'UPDATE users SET password_hash = ?, api_key_hash = ?, api_key_salt = ?, role = ?, status = ?, site_id = ? WHERE id = ?',
+                  )
+                  .run(
+                    passwordHash,
+                    apiKeyHash,
+                    passwordSalt, // passwordSalt를 api_key_salt에 저장
+                    adminRole,
+                    'active',
+                    null, // Admin은 site_id가 null
+                    existingAdmin.id,
+                  );
+
+                if (updateResult.changes === 0) {
+                  throw new Error('Admin 계정 UPDATE 실패: changes = 0');
+                }
+
+                this.logger.log(`[SEED] 🔁 Admin 계정 UPDATE 완료 - affected rows: ${updateResult.changes}, email: ${adminEmail.substring(0, 3)}***, role: ${adminRole}, password_hash 길이: ${passwordHash.length}, api_key_salt 길이: ${passwordSalt.length}`);
+              } else {
+                // 기존 계정이 있고 강제 업데이트가 아닌 경우 (SKIP)
+                this.logger.log(`[SEED] ⏭️  Admin 계정 이미 존재 (skip) - email: ${adminEmail.substring(0, 3)}***, role: ${existingAdmin.role}, password_hash 길이: ${existingAdmin.password_hash?.length || 0}, api_key_salt 길이: ${existingAdmin.api_key_salt?.length || 0}`);
+              }
+            }
+          });
+
+          transaction();
+        } catch (adminError: any) {
+          this.logger.error(`[SEED] ❌ 3단계 실패: Admin 계정 seed 실패:`, adminError.message);
+          this.logger.error(`[SEED] 상세 에러:`, adminError);
+          throw new Error(`Admin 계정 seed 실패: ${adminError.message}`);
+        }
+      } else {
+        this.logger.warn(`[SEED] ⚠️  ${adminEmailKey} 또는 ${adminPasswordKey}가 설정되지 않아 Admin 계정 seed를 SKIP합니다.`);
+      }
+
+      // ✅ 4단계: Creator 계정 생성/업데이트 (idempotent - email 기준으로 조회 후 INSERT/UPDATE)
+      if (creatorEmail && creatorPassword) {
+        this.logger.log(`[SEED] 4단계: Creator 계정 seed 시작 (email: ${creatorEmail.substring(0, 3)}***)`);
+        try {
+          const transaction = db.transaction(() => {
+            // site_id가 반드시 존재하는지 재확인
+            const siteExists = db
+              .prepare('SELECT id FROM sites WHERE id = ?')
+              .get(creatorSiteId) as any;
+
+            if (!siteExists) {
+              throw new Error(`Site '${creatorSiteId}'가 존재하지 않습니다. 1단계에서 생성되었어야 합니다.`);
+            }
+
+            // email 기준으로 기존 계정 조회 (idempotent 보장)
+            const existingCreator = db
+              .prepare('SELECT id, email, role, site_id, password_hash, api_key_salt FROM users WHERE email = ?')
+              .get(creatorEmail) as any;
+
+            if (!existingCreator) {
+              // 새로 생성 (INSERT)
+              this.logger.log(`[SEED] Creator 계정 없음 → INSERT 실행`);
+              const creatorId = randomBytes(16).toString('hex');
+              const creatorApiKey = randomBytes(32).toString('hex');
+              const { hash: passwordHash, salt: passwordSalt } = hashPassword(creatorPassword);
+              // passwordSalt를 api_key_salt에 저장 (비밀번호 검증에 사용)
+              const apiKeyHash = scryptSync(creatorApiKey, passwordSalt, 64).toString('hex');
+
+              const insertResult = db
+                .prepare(
+                  'INSERT INTO users (id, site_id, name, email, password_hash, role, status, api_key_hash, api_key_salt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                )
+                .run(
+                  creatorId,
+                  creatorSiteId,
+                  'Creator',
+                  creatorEmail,
+                  passwordHash,
+                  creatorRole,
+                  'active',
+                  apiKeyHash,
+                  passwordSalt, // passwordSalt를 api_key_salt에 저장
+                );
+
+              if (insertResult.changes === 0) {
+                throw new Error('Creator 계정 INSERT 실패: changes = 0');
+              }
+
+              this.logger.log(`[SEED] ✅ Creator 계정 INSERT 완료 - affected rows: ${insertResult.changes}, email: ${creatorEmail.substring(0, 3)}***, role: ${creatorRole}, site_id: ${creatorSiteId}, password_hash 길이: ${passwordHash.length}, api_key_salt 길이: ${passwordSalt.length}`);
+            } else {
+              // 기존 계정이 있는 경우
+              if (forcePasswordUpdate) {
+                // 강제 업데이트: password_hash, api_key_hash, api_key_salt 재생성, site_id 보정 (UPDATE)
+                this.logger.log(`[SEED] Creator 계정 존재 + SEED_FORCE_PASSWORD_UPDATE=true → UPDATE 실행`);
+                const creatorApiKey = randomBytes(32).toString('hex');
+                const { hash: passwordHash, salt: passwordSalt } = hashPassword(creatorPassword);
+                // passwordSalt를 api_key_salt에 저장 (비밀번호 검증에 사용)
+                const apiKeyHash = scryptSync(creatorApiKey, passwordSalt, 64).toString('hex');
+
+                const updateResult = db
+                  .prepare(
+                    'UPDATE users SET password_hash = ?, api_key_hash = ?, api_key_salt = ?, role = ?, status = ?, site_id = ? WHERE id = ?',
+                  )
+                  .run(
+                    passwordHash,
+                    apiKeyHash,
+                    passwordSalt, // passwordSalt를 api_key_salt에 저장
+                    creatorRole,
+                    'active',
+                    creatorSiteId, // site_id 보정
+                    existingCreator.id,
+                  );
+
+                if (updateResult.changes === 0) {
+                  throw new Error('Creator 계정 UPDATE 실패: changes = 0');
+                }
+
+                this.logger.log(`[SEED] 🔁 Creator 계정 UPDATE 완료 - affected rows: ${updateResult.changes}, email: ${creatorEmail.substring(0, 3)}***, role: ${creatorRole}, site_id: ${creatorSiteId}, password_hash 길이: ${passwordHash.length}, api_key_salt 길이: ${passwordSalt.length}`);
+              } else {
+                // 기존 계정이 있고 강제 업데이트가 아닌 경우 (SKIP)
+                this.logger.log(`[SEED] ⏭️  Creator 계정 이미 존재 (skip) - email: ${creatorEmail.substring(0, 3)}***, role: ${existingCreator.role}, site_id: ${existingCreator.site_id}, password_hash 길이: ${existingCreator.password_hash?.length || 0}, api_key_salt 길이: ${existingCreator.api_key_salt?.length || 0}`);
+              }
+            }
+          });
+
+          transaction();
+        } catch (creatorError: any) {
+          this.logger.error(`[SEED] ❌ 4단계 실패: Creator 계정 seed 실패:`, creatorError.message);
+          this.logger.error(`[SEED] 상세 에러:`, creatorError);
+          throw new Error(`Creator 계정 seed 실패: ${creatorError.message}`);
+        }
+      } else {
+        this.logger.warn(`[SEED] ⚠️  ${creatorEmailKey} 또는 ${creatorPasswordKey}가 설정되지 않아 Creator 계정 seed를 SKIP합니다.`);
+      }
+
+      // Seed 완료 요약 로그
+      this.logger.log(`[SEED] ========================================`);
+      this.logger.log(`[SEED] ✅ Seed 계정 초기화 완료`);
+      this.logger.log(`[SEED] ========================================`);
+    } catch (error: any) {
+      this.logger.error(`[SEED] ========================================`);
+      this.logger.error(`[SEED] ❌ Seed 계정 초기화 실패:`, error.message);
+      this.logger.error(`[SEED] 상세 에러:`, error);
+      this.logger.error(`[SEED] ========================================`);
       // 초기화 실패해도 서버는 계속 실행되도록 함
     }
   }
 
   /**
    * 로그인 (username 또는 email + password)
+   * 
    * DB에서 사용자를 조회하고 비밀번호를 검증합니다.
    * 허용된 계정만 로그인 가능: consulting_manager@naver.com (Admin), j1dly1@naver.com (Creator)
+   * 
+   * [비밀번호 검증 방식]
+   * - scrypt 알고리즘 사용 (crypto.scryptSync)
+   * - password_hash와 api_key_salt를 사용하여 검증
+   * - DatabaseService.verifyPassword() 메서드 사용
+   * 
+   * [테스트 방법]
+   * - Windows PowerShell: Invoke-RestMethod 사용
+   *   예: Invoke-RestMethod -Method POST -Uri "http://localhost:3000/auth/login" `
+   *       -ContentType "application/json" -Body '{"email":"user@example.com","password":"pass"}'
+   * - Windows PowerShell에서 curl.exe 사용 금지 (JSON 파싱 오류 발생)
+   * - curl은 Linux/WSL 환경에서만 사용
    */
   async login(loginDto: LoginDto) {
     const { username, email, password } = loginDto;
@@ -187,7 +429,14 @@ export class AuthService implements OnModuleInit {
       try {
         user = this.databaseService.findUserByEmailOrUsername(identifier);
         if (user) {
-          this.logger.log(`[LOGIN] 단계 B 완료: 사용자 발견 - id: ${user.id}, email: ${user.email}, name: ${user.name}, role: ${user.role}, password_hash: ${user.password_hash ? 'SET' : 'NULL'}`);
+          // password_hash 형식 분석
+          const passwordHashLength = user.password_hash ? user.password_hash.length : 0;
+          const isBcryptFormat = user.password_hash ? user.password_hash.startsWith('$2') : false;
+          const hashFormat = isBcryptFormat ? 'bcrypt ($2...)' : (user.password_hash ? 'scrypt (hex)' : 'NULL');
+          const apiKeySaltLength = user.api_key_salt ? user.api_key_salt.length : 0;
+          
+          this.logger.log(`[LOGIN] 단계 B 완료: 사용자 발견 - id: ${user.id}, email: ${user.email?.substring(0, 3)}***, name: ${user.name}, role: ${user.role}`);
+          this.logger.log(`[LOGIN] 단계 B-1: password_hash 분석 - 형식: ${hashFormat}, 길이: ${passwordHashLength}, api_key_salt 길이: ${apiKeySaltLength}`);
         } else {
           this.logger.warn(`[LOGIN] 단계 B 실패: 사용자를 찾을 수 없음 - ${identifier} (users 테이블에서 email 또는 name으로 검색)`);
           throw new UnauthorizedException('Invalid username/email or password');
@@ -223,26 +472,43 @@ export class AuthService implements OnModuleInit {
         );
       }
 
-      // C) 비밀번호 비교 (scrypt 사용)
-      this.logger.log(`[LOGIN] 단계 C: 비밀번호 비교 시작 - scrypt 검증`);
+      // C) 비밀번호 비교 (scrypt 사용, timingSafeEqual)
+      // ⚠️ 배포 환경 디버깅을 위한 최소 로그 (비밀번호 원문은 절대 출력 금지)
+      this.logger.log(`[LOGIN] 단계 C: 비밀번호 비교 시작 - scrypt 검증 (timingSafeEqual)`);
+      this.logger.log(`[LOGIN] user found: true, email: ${user.email?.substring(0, 3)}***`);
+      
       let isValid;
+      let computedHashLength = 0;
       try {
+        // scryptSync로 computed hash 계산 (로깅용)
+        const crypto = require('crypto');
+        const { scryptSync } = crypto;
+        const computedHash = scryptSync(password, user.api_key_salt || '', 64).toString('hex');
+        computedHashLength = computedHash.length;
+        
+        // DatabaseService.verifyPassword로 검증 (timingSafeEqual 사용)
         isValid = this.databaseService.verifyPassword(
-          password,
-          user.password_hash,
-          user.api_key_salt,
+      password,
+      user.password_hash,
+          user.api_key_salt || '',
         );
+        
+        // ⚠️ 배포 환경 디버깅을 위한 최소 로그 (비밀번호 원문은 절대 출력 금지)
+        this.logger.log(`[LOGIN] 검증 결과 - salt length: ${user.api_key_salt?.length || 0}, hash length: ${user.password_hash?.length || 0}, computed length: ${computedHashLength}, match: ${isValid}`);
         this.logger.log(`[LOGIN] 단계 C 완료: 비밀번호 비교 결과 - ${isValid ? '일치 (true)' : '불일치 (false)'}`);
       } catch (verifyError) {
         this.logger.error(
-          `[LOGIN] 단계 C 실패: 비밀번호 검증 중 오류 (scrypt 비교 실패) - ${user.email}`,
+          `[LOGIN] 단계 C 실패: 비밀번호 검증 중 오류 (scrypt 비교 실패) - ${user.email?.substring(0, 3)}***`,
           verifyError instanceof Error ? verifyError.stack : String(verifyError),
         );
+        this.logger.error(`[LOGIN] 검증 상세 - user 존재: true, password_hash 길이: ${user.password_hash?.length || 0}, api_key_salt 길이: ${user.api_key_salt?.length || 0}, computed hash 길이: ${computedHashLength}, match: false (에러)`);
         throw new InternalServerErrorException('비밀번호 검증 중 오류가 발생했습니다.');
       }
 
       if (!isValid) {
-        this.logger.warn(`[LOGIN] 단계 C 실패: 비밀번호 불일치 - ${identifier} (bcrypt/scrypt 비교 결과: false)`);
+        // ⚠️ 배포 환경 디버깅을 위한 최소 로그 (비밀번호 원문은 절대 출력 금지)
+        this.logger.warn(`[LOGIN] 단계 C 실패: 비밀번호 불일치 - ${identifier} (scrypt 비교 결과: false)`);
+        this.logger.warn(`[LOGIN] 검증 상세 - user found: true, salt length: ${user.api_key_salt?.length || 0}, hash length: ${user.password_hash?.length || 0}, computed length: ${computedHashLength}, match: false`);
         throw new UnauthorizedException('Invalid username/email or password');
       }
 
@@ -271,19 +537,19 @@ export class AuthService implements OnModuleInit {
 
       this.logger.log(`[LOGIN] 로그인 성공: ${user.email || user.name} (${user.role})`);
 
-      return {
-        token,
+    return {
+      token,
         accessToken: token, // 하위 호환성
-        expiresAt: this.getTokenExpiry(token),
-        user: {
-          id: user.id,
+      expiresAt: this.getTokenExpiry(token),
+      user: {
+        id: user.id,
           username: user.name || user.email, // name 또는 email을 username으로 사용
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          site_id: user.site_id,
-        },
-      };
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        site_id: user.site_id,
+      },
+    };
     } catch (error) {
       // 이미 로깅된 에러는 그대로 throw
       if (
@@ -421,7 +687,7 @@ export class AuthService implements OnModuleInit {
   /**
    * 토큰 만료 시간 계산
    */
-  private getTokenExpiry(token: string): string {
+  private getTokenExpiry(token: string): string | null {
     const decoded = this.jwtService.decode(token) as any;
     if (decoded && decoded.exp) {
       return new Date(decoded.exp * 1000).toISOString();
@@ -751,6 +1017,111 @@ export class AuthService implements OnModuleInit {
         message: '비밀번호 변경 중 오류가 발생했습니다. 관리자에게 문의하세요.',
       };
     }
+  }
+
+  /**
+   * Seed 상태 진단
+   * - 프로덕션에서 실제로 어떤 값으로 seed가 돌았는지 즉시 확인 가능
+   * - 응답에는 "이메일", "hash 길이", "salt 길이", "updated_at", "force update 적용 여부", "env 존재 여부"만 포함
+   * - password/hash/salt 원문은 절대 노출 금지
+   */
+  async getSeedStatus(): Promise<{
+    admin?: {
+      email: string;
+      hashLength: number;
+      saltLength: number;
+      updatedAt: string | null;
+      forceUpdateApplied: boolean;
+      envExists: boolean;
+    };
+    creator?: {
+      email: string;
+      hashLength: number;
+      saltLength: number;
+      updatedAt: string | null;
+      forceUpdateApplied: boolean;
+      envExists: boolean;
+    };
+  }> {
+    const db = this.databaseService.getDb();
+    const result: any = {};
+
+    // Admin 계정 상태 확인
+    const adminEmail = this.configService.get<string>('CMS_TEST_ADMIN_EMAIL');
+    const adminPassword = this.configService.get<string>('CMS_TEST_ADMIN_PASSWORD');
+    const forcePasswordUpdate = this.configService.get<string>('SEED_FORCE_PASSWORD_UPDATE') === 'true';
+
+    if (adminEmail) {
+      const adminUser = db
+        .prepare("SELECT email, password_hash, api_key_salt, updated_at FROM users WHERE email = ?")
+        .get(adminEmail) as any;
+
+      if (adminUser) {
+        result.admin = {
+          email: adminUser.email,
+          hashLength: adminUser.password_hash?.length || 0,
+          saltLength: adminUser.api_key_salt?.length || 0,
+          updatedAt: adminUser.updated_at || null,
+          forceUpdateApplied: forcePasswordUpdate,
+          envExists: !!(adminEmail && adminPassword),
+        };
+      } else {
+        result.admin = {
+          email: adminEmail,
+          hashLength: 0,
+          saltLength: 0,
+          updatedAt: null,
+          forceUpdateApplied: false,
+          envExists: !!(adminEmail && adminPassword),
+        };
+      }
+    }
+
+    // Creator 계정 상태 확인
+    const creatorEmail = this.configService.get<string>('CMS_TEST_CREATOR_EMAIL');
+    const creatorPassword = this.configService.get<string>('CMS_TEST_CREATOR_PASSWORD');
+
+    if (creatorEmail) {
+      const creatorUser = db
+        .prepare("SELECT email, password_hash, api_key_salt, updated_at FROM users WHERE email = ?")
+        .get(creatorEmail) as any;
+
+      if (creatorUser) {
+        result.creator = {
+          email: creatorUser.email,
+          hashLength: creatorUser.password_hash?.length || 0,
+          saltLength: creatorUser.api_key_salt?.length || 0,
+          updatedAt: creatorUser.updated_at || null,
+          forceUpdateApplied: forcePasswordUpdate,
+          envExists: !!(creatorEmail && creatorPassword),
+        };
+      } else {
+        result.creator = {
+          email: creatorEmail,
+          hashLength: 0,
+          saltLength: 0,
+          updatedAt: null,
+          forceUpdateApplied: false,
+          envExists: !!(creatorEmail && creatorPassword),
+        };
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * 이메일 마스킹 (예: consulting_manager@naver.com -> con***@naver.com)
+   */
+  private maskEmail(email: string): string {
+    const [localPart, domain] = email.split('@');
+    if (!domain) {
+      return email.substring(0, 3) + '***';
+    }
+    if (localPart.length <= 3) {
+      return `${localPart.substring(0, 1)}***@${domain}`;
+    }
+    return `${localPart.substring(0, 3)}***@${domain}`;
   }
 }
 

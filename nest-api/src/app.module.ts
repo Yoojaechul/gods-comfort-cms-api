@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
@@ -7,6 +7,7 @@ import { VideosModule } from './videos/videos.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { FacebookKeyModule } from './facebook-key/facebook-key.module';
 import { UploadsModule } from './uploads/uploads.module';
+import { DebugModule } from './debug/debug.module';
 
 @Module({
   controllers: [AppController],
@@ -28,6 +29,9 @@ import { UploadsModule } from './uploads/uploads.module';
     FacebookKeyModule,
     // 업로드 모듈
     UploadsModule,
+    // 디버그 모듈 (DEBUG_ENDPOINTS=true일 때만 활성화)
+    // ⚠️ 중요: 배포 후 원인 확인이 끝나면 DEBUG_ENDPOINTS=false로 되돌려주세요.
+    DebugModule,
   ],
 })
 export class AppModule {}

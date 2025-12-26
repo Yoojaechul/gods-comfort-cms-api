@@ -1,10 +1,43 @@
-import { Controller, Post, Get, Body, UseGuards, Request, ForbiddenException, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+/**
+ * ============================================================================
+ * ⚠️ 중요: API 테스트 방법 안내
+ * ============================================================================
+ * 
+ * Windows PowerShell에서 curl.exe 사용 시 JSON 파싱 오류가 발생할 수 있습니다.
+ * 
+ * [문제 원인]
+ * - Windows PowerShell의 curl.exe는 JSON 문자열을 PowerShell 문법으로 선파싱하여
+ *   `{}`, `"`, `\` 문자가 깨질 수 있음
+ * - 이로 인해 서버에서는 다음과 같은 오류가 발생할 수 있음:
+ *   "Expected property name or '}' in JSON at position 1"
+ * - 이는 서버 문제가 아니라 **클라이언트 테스트 도구 문제**임
+ * 
+ * [권장 테스트 방법]
+ * 1. PowerShell: Invoke-RestMethod 사용 (권장)
+ *    예: Invoke-RestMethod -Method POST -Uri "http://localhost:3000/auth/login" `
+ *        -ContentType "application/json" -Body '{"email":"user@example.com","password":"pass"}'
+ * 
+ * 2. Frontend: fetch / axios 사용
+ * 
+ * 3. curl: Linux / WSL 환경에서만 사용
+ *    Windows PowerShell에서 curl.exe 사용 금지
+ * 
+ * [인증 로직]
+ * - password_hash: scrypt 알고리즘으로 해싱 (128 hex 길이)
+ * - 검증: DatabaseService.verifyPassword() 사용 (scrypt 기반)
+ * - salt: api_key_salt 컬럼에 저장
+ * 
+ * ============================================================================
+ */
+
+import { Controller, Post, Get, Body, UseGuards, Req, ForbiddenException, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { SetupPasswordDto } from './dto/setup-password.dto';
@@ -36,6 +69,11 @@ export class AuthController {
 
   /**
    * 로그인 (username + password)
+   * 
+   * ⚠️ 테스트 시 주의사항:
+   * - Windows PowerShell에서 curl.exe 사용 금지 (JSON 파싱 오류 발생 가능)
+   * - 권장: Invoke-RestMethod 또는 Frontend fetch/axios 사용
+   * - curl은 Linux/WSL 환경에서만 사용
    */
   @Post('login')
   @ApiOperation({ summary: '사용자명/비밀번호 로그인' })
@@ -54,7 +92,18 @@ export class AuthController {
     },
   })
   @ApiResponse({ status: 401, description: '잘못된 사용자명 또는 비밀번호' })
-  async login(@Body() loginDto: LoginDto) {
+  async login(@Body() loginDto: LoginDto, @Req() req: Request) {
+    // JSON 파싱 디버그 로그 (비밀번호 마스킹 처리)
+    const contentType = req.headers['content-type'] || 'undefined';
+    this.logger.log(`[LOGIN] content-type=${contentType}`);
+    
+    // 비밀번호를 마스킹한 loginDto 복사본 생성
+    const maskedLoginDto = {
+      ...loginDto,
+      password: loginDto.password ? `*** (length=${loginDto.password.length})` : undefined,
+    };
+    this.logger.log(`[LOGIN] body=${JSON.stringify(maskedLoginDto)}`);
+    
     const identifier = loginDto.username || loginDto.email || 'unknown';
     this.logger.log(`[LOGIN] 로그인 시도 시작: ${identifier}`);
 
@@ -138,15 +187,16 @@ export class AuthController {
     },
   })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
-  async getMe(@Request() req: any) {
+  async getMe(@Req() req: Request) {
     // JWT 토큰에서 추출한 사용자 정보 반환
+    const user = (req as any).user;
     return {
-      id: req.user.sub || req.user.id,
-      username: req.user.username,
-      name: req.user.username,
-      email: req.user.email || `${req.user.username}@example.com`,
-      role: req.user.role,
-      site_id: req.user.site_id || null,
+      id: user.sub || user.id,
+      username: user.username,
+      name: user.username,
+      email: user.email || `${user.username}@example.com`,
+      role: user.role,
+      site_id: user.site_id || null,
     };
   }
 
@@ -258,13 +308,37 @@ export class AuthController {
   @ApiResponse({ status: 403, description: '권한 없음 (admin/creator만 가능)' })
   async changePasswordJwt(
     @Body() changePasswordDto: ChangePasswordDto,
-    @Request() req: any,
+    @Req() req: Request,
   ) {
+    const user = (req as any).user;
     return this.authService.changePassword(
-      req.user.id,
+      user.id,
       changePasswordDto.current_password,
       changePasswordDto.new_password,
     );
+  }
+
+  /**
+   * Seed 상태 진단 엔드포인트
+   * - NODE_ENV !== 'production' 또는 CMS_DEBUG=true일 때만 활성화
+   * - 응답에는 "이메일", "hash 길이", "salt 길이", "updated_at", "force update 적용 여부", "env 존재 여부"만 포함
+   * - password/hash/salt 원문은 절대 노출 금지
+   */
+  @Get('seed-status')
+  @ApiOperation({ summary: 'Seed 상태 진단 (디버그용)' })
+  @ApiResponse({ status: 200, description: 'Seed 상태 정보 반환' })
+  @ApiResponse({ status: 403, description: '프로덕션 환경에서는 접근 불가' })
+  async getSeedStatus() {
+    // 운영 안전장치: NODE_ENV !== 'production' 또는 CMS_DEBUG=true일 때만 활성화
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isDebugEnabled = process.env.CMS_DEBUG === 'true';
+    
+    if (isProduction && !isDebugEnabled) {
+      this.logger.warn('[SEED_STATUS] 프로덕션 환경에서 CMS_DEBUG=true 없이 접근 시도');
+      throw new ForbiddenException('이 엔드포인트는 프로덕션 환경에서 CMS_DEBUG=true일 때만 사용 가능합니다.');
+    }
+
+    return this.authService.getSeedStatus();
   }
 
 }

@@ -22,15 +22,25 @@ export class DatabaseService implements OnModuleInit {
       this.configService.get<string>('DB_PATH') ||
       '/app/data/cms.db';
 
-    this.logger.log(`📂 Opening SQLite database: ${dbPath}`);
+    // DB 드라이버 및 경로 로깅 (배포 환경 진단용)
+    this.logger.log(`[DB] 드라이버: better-sqlite3`);
+    this.logger.log(`[DB] DB 파일 경로: ${dbPath}`);
+    this.logger.log(`[DB] SQLITE_DB_PATH env: ${process.env.SQLITE_DB_PATH || '(not set)'}`);
+    this.logger.log(`[DB] DB_PATH env: ${process.env.DB_PATH || '(not set)'}`);
 
     try {
       // DB 디렉터리 존재 보장 (Cloud Run에서 필요)
       const dbDir = path.dirname(dbPath);
       if (!fs.existsSync(dbDir)) {
         fs.mkdirSync(dbDir, { recursive: true });
-        this.logger.log(`📁 DB directory created: ${dbDir}`);
+        this.logger.log(`[DB] 디렉터리 생성: ${dbDir}`);
+      } else {
+        this.logger.log(`[DB] 디렉터리 존재 확인: ${dbDir}`);
       }
+
+      // DB 파일 존재 여부 확인
+      const dbFileExists = fs.existsSync(dbPath);
+      this.logger.log(`[DB] DB 파일 존재 여부: ${dbFileExists ? '존재함' : '없음 (자동 생성 예정)'}`);
 
       // better-sqlite3로 DB 열기 (파일이 없으면 자동 생성)
       this.db = new Database(dbPath);
@@ -39,7 +49,7 @@ export class DatabaseService implements OnModuleInit {
       this.db.pragma('journal_mode = WAL');
       this.db.pragma('foreign_keys = ON');
 
-      this.logger.log('✅ SQLite database connected successfully');
+      this.logger.log('[DB] ✅ SQLite 데이터베이스 연결 성공');
 
       // ✅ 스키마 자동 생성 (테이블이 없으면 생성)
       this.ensureSchema();
@@ -200,9 +210,48 @@ export class DatabaseService implements OnModuleInit {
       `);
 
       this.logger.log('✅ Database schema ensured successfully');
+
+      // ✅ 기본 site 레코드 생성 (FK 제약 조건을 위해 필수)
+      this.ensureDefaultSite();
     } catch (error) {
       this.logger.error('❌ Schema creation failed:', error);
       throw error;
+    }
+  }
+
+  /**
+   * 기본 site 레코드 생성 (FK 제약 조건을 위해 필수)
+   * users 테이블의 site_id가 sites 테이블을 참조하므로 필수
+   */
+  private ensureDefaultSite(): void {
+    try {
+      const defaultSiteId = 'gods';
+      const existingSite = this.db
+        .prepare('SELECT id FROM sites WHERE id = ?')
+        .get(defaultSiteId) as any;
+
+      if (!existingSite) {
+        this.db
+          .prepare(
+            `INSERT INTO sites (id, domain, name, homepage_url, api_base, facebook_key, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+          )
+          .run(
+            defaultSiteId,
+            'godcomfortword.com',
+            "God's Comfort Word",
+            'https://www.godcomfortword.com',
+            null, // api_base는 운영에서 환경변수로 설정 가능
+            null, // facebook_key는 나중에 설정 가능
+          );
+
+        this.logger.log(`✅ Default site created: ${defaultSiteId}`);
+      } else {
+        this.logger.log(`⏭️  Default site already exists: ${defaultSiteId}`);
+      }
+    } catch (error) {
+      this.logger.error('❌ Default site creation failed:', error);
+      // site 생성 실패해도 서버는 계속 실행되도록 함 (FK 제약 조건 위반 가능)
     }
   }
 
@@ -470,15 +519,30 @@ export class DatabaseService implements OnModuleInit {
   }
 
   /**
-   * 비밀번호 검증 (scrypt 사용)
-   * db.js의 verifyPassword와 동일한 로직
+   * 비밀번호 검증 (scrypt 사용, timingSafeEqual로 타이밍 공격 방지)
+   * - password_hash: scryptSync(password, api_key_salt, 64).toString('hex') (128 hex 길이)
+   * - api_key_salt: 32 hex 문자 (16바이트)
+   * - 비교: timingSafeEqual 사용 (둘 다 Buffer로 변환)
    */
   verifyPassword(password: string, hash: string, salt: string): boolean {
     try {
       const crypto = require('crypto');
-      const { scryptSync } = crypto;
+      const { scryptSync, timingSafeEqual } = crypto;
+      
+      // 입력 비밀번호로 hash 계산
       const testHash = scryptSync(password, salt, 64).toString('hex');
-      return testHash === hash;
+      
+      // timingSafeEqual을 사용하여 타이밍 공격 방지 (Buffer로 변환)
+      const hashBuffer = Buffer.from(hash, 'hex');
+      const testHashBuffer = Buffer.from(testHash, 'hex');
+      
+      // 길이가 다르면 즉시 false 반환
+      if (hashBuffer.length !== testHashBuffer.length) {
+        return false;
+      }
+      
+      // timingSafeEqual로 비교
+      return timingSafeEqual(hashBuffer, testHashBuffer);
     } catch (error) {
       this.logger.error(`❌ 비밀번호 검증 에러:`, error);
       return false;
