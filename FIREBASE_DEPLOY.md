@@ -155,3 +155,4 @@ npm run preview
 3. 환경 변수 설정 확인 (`.env` 파일)
 
 
+

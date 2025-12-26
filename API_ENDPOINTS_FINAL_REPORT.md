@@ -325,3 +325,4 @@ https://us-central1-gods-comfort-word.cloudfunctions.net/api
 **해결**: 빌드 시 `VITE_API_BASE_URL` 환경 변수를 Firebase Functions URL로 설정
 
 
+

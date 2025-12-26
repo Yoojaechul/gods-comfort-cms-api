@@ -333,6 +333,50 @@ export class PublicVideosController {
 
     return await this.videosService.incrementShare(id);
   }
+
+  /**
+   * YouTube 메타데이터 조회 (Public API)
+   * 인증 없이 접근 가능하며, YouTube URL 또는 Video ID로 제목을 조회합니다.
+   */
+  @Get('youtube/metadata')
+  @ApiOperation({ summary: 'YouTube 메타데이터 조회 (비회원용)' })
+  @ApiQuery({
+    name: 'url',
+    required: false,
+    description: 'YouTube URL (예: https://www.youtube.com/watch?v=...)',
+    example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  })
+  @ApiQuery({
+    name: 'videoId',
+    required: false,
+    description: 'YouTube Video ID (예: dQw4w9WgXcQ)',
+    example: 'dQw4w9WgXcQ',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'YouTube 메타데이터 조회 성공',
+    schema: {
+      example: {
+        title: 'Rick Astley - Never Gonna Give You Up (Official Video)',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: '잘못된 요청 (url 또는 videoId가 없음)',
+  })
+  async getYouTubeMetadata(
+    @Query('url') url?: string,
+    @Query('videoId') videoId?: string,
+  ): Promise<{ title: string | null }> {
+    const urlOrId = url || videoId;
+
+    if (!urlOrId || !urlOrId.trim()) {
+      throw new BadRequestException('url 또는 videoId 쿼리 파라미터가 필요합니다.');
+    }
+
+    return await this.videosService.getPublicYouTubeMetadata(urlOrId.trim());
+  }
 }
 
 

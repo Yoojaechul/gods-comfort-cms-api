@@ -67,7 +67,7 @@ function normalizeYouTubeUrlForRequest(urlOrId: string): string {
 /**
  * ✅ YouTube 메타데이터 (CMS API 사용)
  * - 프론트에서 유튜브 oEmbed 직접 호출하면 CORS/401/HTML 응답(doctype) 문제가 생길 수 있어
- *   반드시 배포된 CMS API의 /metadata/youtube를 사용합니다.
+ *   반드시 배포된 CMS API의 /public/videos/youtube/metadata를 사용합니다.
  */
 export async function fetchYouTubeMetadata(
   sourceUrlOrId: string
@@ -85,7 +85,8 @@ export async function fetchYouTubeMetadata(
       );
     }
 
-    const apiUrl = `${String(base).replace(/\/+$/, "")}/metadata/youtube?url=${encodeURIComponent(
+    // Public API 엔드포인트 사용: /public/videos/youtube/metadata
+    const apiUrl = `${String(base).replace(/\/+$/, "")}/public/videos/youtube/metadata?url=${encodeURIComponent(
       normalized
     )}`;
 
@@ -103,17 +104,16 @@ export async function fetchYouTubeMetadata(
     const data = await resp.json().catch(() => null);
 
     const title = data?.title ?? "";
-    const thumb = data?.thumbnailUrl ?? "";
 
     const meta: VideoMetadata = {
       title: title || undefined,
-      thumbnail_url: thumb || undefined,
+      thumbnail_url: undefined, // 썸네일은 별도로 처리
     };
 
-    // 썸네일이 비어있으면 videoId 기반으로 생성
-    if (!meta.thumbnail_url) {
-      const vid = extractYoutubeId(sourceUrlOrId);
-      if (vid) meta.thumbnail_url = `https://img.youtube.com/vi/${vid}/maxresdefault.jpg`;
+    // 썸네일은 videoId 기반으로 생성 (항상 생성)
+    const vid = extractYoutubeId(sourceUrlOrId);
+    if (vid) {
+      meta.thumbnail_url = `https://img.youtube.com/vi/${vid}/maxresdefault.jpg`;
     }
 
     return meta;

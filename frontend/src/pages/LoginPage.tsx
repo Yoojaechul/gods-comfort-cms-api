@@ -135,7 +135,7 @@ export default function LoginPage() {
 
         <form onSubmit={onSubmit} style={styles.form}>
           <div style={styles.field}>
-            <label style={styles.label}>이메일</label>
+            <label style={styles.label}>아이디</label>
             <input
               type="email"
               value={email}

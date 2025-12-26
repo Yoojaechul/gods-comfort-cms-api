@@ -404,6 +404,81 @@ fastify.get("/public/health", async () => ({ status: "ok", service: "cms-api", m
 fastify.get("/public/healthz", async () => ({ status: "healthy", timestamp: new Date().toISOString() }));
 
 /**
+ * ✅ YouTube 메타데이터 조회 (Public API)
+ * GET /public/videos/youtube/metadata?url=https://www.youtube.com/watch?v=...
+ * response: { title: "..." }
+ */
+fastify.get("/public/videos/youtube/metadata", async (req, reply) => {
+  const url = (req.query?.url || "").toString().trim();
+
+  if (!url) {
+    return reply.code(400).send({
+      error: "BAD_REQUEST",
+      message: "url query parameter is required",
+    });
+  }
+
+  try {
+    // YouTube oEmbed API 호출
+    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+
+    // 5초 타임아웃 설정
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const response = await fetch(oembedUrl, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; CMS-API/1.0)",
+        },
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        fastify.log.warn(`YouTube oEmbed API failed: ${response.status} ${response.statusText}`);
+        return reply.code(502).send({
+          error: "BAD_GATEWAY",
+          message: "Failed to fetch YouTube metadata",
+        });
+      }
+
+      const data = await response.json();
+      const title = data?.title || null;
+
+      if (!title) {
+        fastify.log.warn("YouTube oEmbed response missing title");
+        return reply.code(404).send({
+          error: "NOT_FOUND",
+          message: "Title not found in YouTube metadata",
+        });
+      }
+
+      return reply.send({ title });
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+
+      if (fetchError.name === "AbortError") {
+        fastify.log.warn("YouTube oEmbed API timeout after 5 seconds");
+        return reply.code(504).send({
+          error: "GATEWAY_TIMEOUT",
+          message: "YouTube metadata fetch timeout",
+        });
+      }
+
+      throw fetchError;
+    }
+  } catch (error) {
+    fastify.log.error("YouTube metadata fetch error:", error);
+    return reply.code(502).send({
+      error: "BAD_GATEWAY",
+      message: "Failed to fetch YouTube metadata",
+    });
+  }
+});
+
+/**
  * ✅ 로그인 (실제 구현)
  * body: { email, password }
  * response: { token, user }

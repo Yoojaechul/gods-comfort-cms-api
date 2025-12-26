@@ -46,6 +46,25 @@ export class VideosService {
   }
 
   /**
+   * YouTube 메타데이터 조회 (Public API용)
+   * @param urlOrId YouTube URL 또는 Video ID
+   * @returns 제목과 썸네일 URL
+   */
+  async getPublicYouTubeMetadata(
+    urlOrId: string,
+  ): Promise<{ title: string | null }> {
+    try {
+      const metadata = await this.getYouTubeMetadata(urlOrId);
+      return {
+        title: metadata.title,
+      };
+    } catch (error: any) {
+      this.logger.warn(`YouTube metadata fetch failed: ${error.message}`);
+      return { title: null };
+    }
+  }
+
+  /**
    * YouTube 메타데이터 조회
    */
   private async getYouTubeMetadata(

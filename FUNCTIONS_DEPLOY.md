@@ -193,3 +193,4 @@ firebase emulators:start --only functions
 - Firebase Functions 리전: `us-central1` (기본값)
 
 
+
