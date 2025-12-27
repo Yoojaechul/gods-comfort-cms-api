@@ -217,3 +217,53 @@ body {
   }
 }
 
+
+/* =========================================================
+   FIX: Hide sidebar thumbnails in Creator CMS (Responsive)
+   - 목표: 화면을 줄였을 때(모바일/태블릿) 좌측 파란 사이드바 썸네일 숨김
+   - img 뿐 아니라 background-image 방식도 함께 차단
+   ========================================================= */
+
+@media (max-width: 1200px) {
+  /* 사이드바 내부의 모든 이미지 숨김 (가장 확실) */
+  .admin-sidebar img,
+  .cms-sidebar img,
+  aside img {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* 썸네일이 div background-image 로 들어오는 경우까지 차단 */
+  .admin-sidebar [style*="background-image"],
+  .cms-sidebar [style*="background-image"],
+  aside [style*="background-image"] {
+    background-image: none !important;
+  }
+
+  /* 썸네일 리스트 영역 자체가 있다면 통째로 숨김 */
+  .cms-sidebar-thumbnails,
+  .cms-sidebar-thumbnail,
+  .sidebar-thumbnails,
+  .sidebar-thumbnail {
+    display: none !important;
+  }
+}
+/* =========================================================
+   Creator CMS: 작은 화면에서 "사이드바 썸네일 리스트"만 숨김
+   (절대 aside img 같은 광역 선택자 사용 금지)
+   ========================================================= */
+
+/* cursor가 넣은 wrapper 클래스가 실제 썸네일 영역을 감싸고 있다는 전제 */
+@media (max-width: 1024px) {
+  .cms-sidebar-thumbnails {
+    display: none !important;
+  }
+}
+
+/* 혹시 wrapper가 아직 정확히 못 감쌌다면, 사이드바 내부의 썸네일 '리스트 컨테이너'만 추가로 숨김(안전한 범위) */
+@media (max-width: 1024px) {
+  .cms-sidebar .cms-sidebar-thumbnails {
+    display: none !important;
+  }
+}
+

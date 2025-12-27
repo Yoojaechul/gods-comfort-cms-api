@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CMS_API_BASE } from "../config";
+import { getApiBase } from "../config";
 import { useAuth } from "../contexts/AuthContext";
 import { getBatchUploadApiEndpoint } from "../lib/videoApi";
 
@@ -89,7 +89,7 @@ export default function BatchUploadModal({
       }
       const userRole = user.role as "admin" | "creator";
       const apiPath = getBatchUploadApiEndpoint(userRole);
-      const url = `${CMS_API_BASE}${apiPath}`;
+      const url = `${getApiBase()}${apiPath}`;
       
       const response = await fetch(url, {
         method: "POST",

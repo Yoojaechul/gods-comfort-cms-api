@@ -72,3 +72,9 @@ console.log(import.meta.env.VITE_API_BASE_URL);
 프로덕션 배포 시 반드시 .env.production 파일에 VITE_API_BASE_URL을 설정하세요.
 ```
 
+
+
+
+
+
+

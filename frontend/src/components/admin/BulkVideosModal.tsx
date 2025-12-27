@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import type { Video, VideoPayload } from "../../types/video";
-import { CMS_API_BASE } from "../../config";
 import { useAuth } from "../../contexts/AuthContext";
 import { uploadThumbnail } from "../../lib/cmsClient";
 import { buildVideoPayload } from "../../utils/videoPayload";
+import { getVideoApiEndpoint } from "../../lib/videoApi";
 import { LANGUAGE_OPTIONS, DEFAULT_LANGUAGE } from "../../constants/languages";
 import { fetchYouTubeMetadata, validateYouTubeUrl, extractYoutubeId } from "../../utils/videoMetadata";
+import { apiPost } from "../../lib/apiClient";
 import "./BulkVideosModal.css";
 
 interface BulkVideoRow {
@@ -441,18 +442,18 @@ export default function BulkVideosModal({ onClose, onSuccess }: BulkVideosModalP
         }
       }
 
-      // 관리자/크리에이터 모두 동일한 엔드포인트 사용 (권한은 JWT role로 서버에서 처리)
       if (!user?.role) {
         throw new Error("사용자 역할 정보를 찾을 수 없습니다. 다시 로그인해주세요.");
       }
+      
+      const userRole = user.role as "admin" | "creator";
       
       // site_id 가져오기 (단일 사이트 CMS이므로 항상 "gods"로 고정)
       // localStorage나 user.site_id 무시하고 항상 "gods" 사용
       const siteIdValue = "gods";
       
-      // 각 row를 순차적으로 POST /videos로 호출
-      const apiPath = "/videos";
-      const fullUrl = `${CMS_API_BASE}${apiPath}`;
+      // role에 따라 올바른 엔드포인트 사용 (Admin: /admin/videos, Creator: /creator/videos)
+      const apiPath = getVideoApiEndpoint(userRole);
       
       const successList: Array<{ rowIndex: number; title: string }> = [];
       const failureList: Array<{ rowIndex: number; title: string; error: string }> = [];
@@ -594,30 +595,25 @@ export default function BulkVideosModal({ onClose, onSuccess }: BulkVideosModalP
             payloadString: JSON.stringify(payload, null, 2),
           });
           
-          // POST /videos 호출
-          const response = await fetch(fullUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-          if (!response.ok) {
-            let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-            try {
-              const errorData = await response.json();
-              errorMessage = errorData.message || errorData.error || errorMessage;
-            } catch {
-              // JSON 파싱 실패 시 기본 메시지 사용
-            }
+          // POST {apiPath} 호출 (Admin: /admin/videos, Creator: /creator/videos)
+          // apiClient 사용하여 일관된 에러 핸들링 및 Authorization 헤더 자동 포함
+          try {
+            await apiPost(apiPath, payload);
+            // 성공 목록에 추가
+            successList.push({
+              rowIndex: rowIndex + 1,
+              title: row.title.trim() || "(제목 없음)",
+            });
+            console.log(`[대량 등록/편집] 행 ${rowIndex + 1} 성공`);
+          } catch (error: any) {
+            // apiClient가 이미 에러 메시지를 개선하여 던짐
+            const errorMessage = error?.message || `저장 실패`;
             
             // 401/403 응답 시 자동 로그아웃 처리
-            if (response.status === 401 || response.status === 403) {
-              console.error(`[대량 등록/편집] 인증 오류 (${response.status}): 자동 로그아웃 실행`);
+            if (error?.status === 401 || error?.status === 403) {
+              console.error(`[대량 등록/편집] 인증 오류 (${error.status}): 자동 로그아웃 실행`);
               logout();
-              throw new Error(`인증 오류가 발생했습니다. 다시 로그인해주세요. (${response.status})`);
+              throw new Error(`인증 오류가 발생했습니다. 다시 로그인해주세요. (${error.status})`);
             }
             
             // 실패 목록에 추가
@@ -627,13 +623,6 @@ export default function BulkVideosModal({ onClose, onSuccess }: BulkVideosModalP
               error: errorMessage,
             });
             console.error(`[대량 등록/편집] 행 ${rowIndex + 1} 실패:`, errorMessage);
-          } else {
-            // 성공 목록에 추가
-            successList.push({
-              rowIndex: rowIndex + 1,
-              title: row.title.trim() || "(제목 없음)",
-            });
-            console.log(`[대량 등록/편집] 행 ${rowIndex + 1} 성공`);
           }
         } catch (err) {
           // 예외 발생 시 실패 목록에 추가

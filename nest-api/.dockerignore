@@ -1,0 +1,63 @@
+# Node modules (빌드 시 재설치)
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Build output (빌드 시 재생성)
+dist
+
+# 개발 환경 파일
+.env
+.env.local
+.env.*.local
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 테스트 및 문서
+*.md
+!README.md
+test
+tests
+*.test.ts
+*.spec.ts
+*.test.js
+*.spec.js
+
+# 기타
+coverage
+.nyc_output
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# 빌드 캐시
+.npm
+.cache
+
+# 임시 파일
+tmp
+temp
+*.tmp
+
+
+
+
+
+
+
+

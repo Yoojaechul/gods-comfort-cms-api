@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import DashboardLayout from "../components/DashboardLayout";
-import { CMS_API_BASE } from "../config";
 import { useAuth } from "../contexts/AuthContext";
 import VideoTable from "../components/VideoTable";
 import BatchUploadModal from "../components/BatchUploadModal";
 import { getVideosListApiEndpoint, getBatchDeleteApiEndpoint } from "../lib/videoApi";
 import { sortVideosByManagementNumber } from "../utils/videoSort";
+import { apiGet, apiPost } from "../lib/apiClient";
 
 export default function VideosPage() {
   const { token, user } = useAuth();
@@ -33,10 +33,7 @@ export default function VideosPage() {
       }
       const userRole = user.role as "admin" | "creator";
       const endpoint = getVideosListApiEndpoint(userRole);
-      const response = await fetch(`${CMS_API_BASE}${endpoint}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
+      const data = await apiGet<any>(endpoint);
       
       // API 응답을 항상 배열로 정규화
       const items: any[] = Array.isArray(data) 
@@ -87,14 +84,7 @@ export default function VideosPage() {
       }
       const userRole = user.role as "admin" | "creator";
       const endpoint = getBatchDeleteApiEndpoint(userRole);
-      await fetch(`${CMS_API_BASE}${endpoint}`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ video_ids: selectedVideos }),
-      });
+      await apiPost(endpoint, { video_ids: selectedVideos });
       setSelectedVideos([]);
       fetchVideos();
     } catch (error) {

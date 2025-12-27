@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { CMS_API_BASE } from "../config";
 import { useAuth } from "../contexts/AuthContext";
 import { apiGet, apiDelete } from "../lib/apiClient";
 import type { Video } from "../types/video";
@@ -112,7 +111,7 @@ export default function AdminVideosPage({ role = "admin" }: VideosPageProps) {
       const endpoint = `${apiPath}${queryString}`;
       
       // apiClient를 사용하여 일관된 에러 핸들링
-      const data = await apiGet<any>(endpoint, { auth: true });
+      const data = await apiGet<any>(endpoint);
       
       // 콘솔에 응답 로그 출력
       console.log('GET /videos 응답:', data);
@@ -199,7 +198,7 @@ export default function AdminVideosPage({ role = "admin" }: VideosPageProps) {
           item.thumbnailImage ||
           item.thumbnail_image ||
           null;
-        const normalizedThumbnailUrl = normalizeThumbnailUrl(rawThumbnailUrl, CMS_API_BASE);
+        const normalizedThumbnailUrl = normalizeThumbnailUrl(rawThumbnailUrl);
         
         // 관리번호 필드명 표준화: 다양한 필드명을 videoManageNo로 통일
         const rawManageNo = 
@@ -371,7 +370,7 @@ export default function AdminVideosPage({ role = "admin" }: VideosPageProps) {
     const userRole = (currentRole || user?.role || "admin") as "admin" | "creator";
     const apiPath = getVideoDeleteApiEndpoint(userRole, videoId);
     
-    console.log(`[영상 삭제] 요청 URL: ${CMS_API_BASE}${apiPath}, videoId: ${videoId}, role: ${userRole}`);
+    console.log(`[영상 삭제] 요청 경로: ${apiPath}, videoId: ${videoId}, role: ${userRole}`);
     
     try {
       await apiDelete(apiPath, { auth: true });

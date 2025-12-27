@@ -5,8 +5,8 @@
  */
 
 export function getVideoApiBasePath(role: "admin" | "creator"): string {
-  // 관리자/크리에이터 모두 동일한 엔드포인트 사용 (권한은 JWT role로 서버에서 처리)
-  return "/videos";
+  // Admin은 /admin/videos, Creator는 /creator/videos 사용
+  return role === "admin" ? "/admin/videos" : "/creator/videos";
 }
 
 export function getVideoApiEndpoint(
@@ -21,26 +21,26 @@ export function getVideoDeleteApiEndpoint(
   role: "admin" | "creator",
   videoId: string
 ): string {
-  // 관리자는 /admin/videos/:id, 크리에이터는 /videos/:id 사용
+  // 관리자는 /admin/videos/:id, 크리에이터는 /creator/videos/:id 사용
   if (role === "admin") {
     return `/admin/videos/${videoId}`;
   }
-  return `/videos/${videoId}`;
+  return `/creator/videos/${videoId}`;
 }
 
 export function getBulkVideosApiEndpoint(role: "admin" | "creator"): string {
-  // 관리자/크리에이터 모두 동일한 엔드포인트 사용
-  return "/videos/bulk";
+  // Admin은 /admin/videos/bulk, Creator는 /creator/videos/bulk 사용
+  return role === "admin" ? "/admin/videos/bulk" : "/creator/videos/bulk";
 }
 
 export function getVideosListApiEndpoint(role: "admin" | "creator"): string {
-  return role === "admin" ? "/admin/videos" : "/videos";
+  return role === "admin" ? "/admin/videos" : "/creator/videos";
 }
 
 export function getBatchUploadApiEndpoint(role: "admin" | "creator"): string {
-  return role === "admin" ? "/admin/videos/batch" : "/videos/batch";
+  return role === "admin" ? "/admin/videos/batch" : "/creator/videos/batch";
 }
 
 export function getBatchDeleteApiEndpoint(role: "admin" | "creator"): string {
-  return role === "admin" ? "/admin/videos/batch-delete" : "/videos/batch-delete";
+  return role === "admin" ? "/admin/videos/batch-delete" : "/creator/videos/batch-delete";
 }

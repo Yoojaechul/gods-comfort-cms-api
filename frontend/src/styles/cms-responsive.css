@@ -1,0 +1,39 @@
+/* =========================================================
+   CMS CREATOR responsive fix
+   - Hide sidebar thumbnails on small screens
+   - Scoped to creator page to avoid hiding other images
+   ========================================================= */
+
+/* creator 페이지에서만 적용 */
+body:has(a[href="/creator/my-videos"]),
+body:has(a[href="/creator/my-videos"].active),
+body:has([href*="/creator/my-videos"]) {
+  /* nothing - just scoping anchor */
+}
+
+@media (max-width: 1024px) {
+  /* 1) 사이드바 후보들을 최대한 안전하게 좁혀서 이미지 숨김 */
+  aside img,
+  nav img,
+  [class*="sidebar"] img,
+  [class*="Sidebar"] img {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* 2) 썸네일 전용으로 보이는 영역/클래스 후보들 제거 */
+  .cms-sidebar-thumbnails,
+  .sidebar-thumbnails,
+  .thumbnail-rail,
+  .thumb-rail,
+  .thumbs,
+  .thumbnails,
+  [class*="thumb"],
+  [class*="Thumb"],
+  [class*="thumbnail"],
+  [class*="Thumbnail"] {
+    display: none !important;
+    height: 0 !important;
+    overflow: hidden !important;
+  }
+}

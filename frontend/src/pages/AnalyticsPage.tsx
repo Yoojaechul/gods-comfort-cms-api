@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import DashboardLayout from "../components/DashboardLayout";
-import { CMS_API_BASE } from "../config";
+import { getApiBase } from "../config";
 import { useAuth } from "../contexts/AuthContext";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
 
@@ -17,7 +17,7 @@ export default function AnalyticsPage() {
   const fetchAnalytics = async () => {
     try {
       const response = await fetch(
-        `${CMS_API_BASE}/admin/analytics?period=${period}`,
+        `${getApiBase()}/admin/analytics?period=${period}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }

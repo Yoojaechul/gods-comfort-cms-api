@@ -4,6 +4,8 @@ import { BrowserRouter } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import './index.css'
 import App from './App.tsx'
+import "./styles/cms-responsive.css";
+
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -196,6 +196,180 @@ export class VideosService {
   }
 
   /**
+   * management_id 생성 (YYMMDD-001 형식)
+   * site_id + Asia/Seoul 기준 날짜 단위로 증가
+   * 동시성 안전 처리 (BEGIN IMMEDIATE 트랜잭션 사용)
+   */
+  private generateManagementId(siteId: string): string {
+    const db = this.databaseService.getDb();
+    
+    // Asia/Seoul 시간대 기준 날짜 (YYMMDD)
+    const now = new Date();
+    const seoulTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+    const year = seoulTime.getFullYear().toString().slice(-2); // YY
+    const month = String(seoulTime.getMonth() + 1).padStart(2, '0'); // MM
+    const day = String(seoulTime.getDate()).padStart(2, '0'); // DD
+    const datePrefix = `${year}${month}${day}`;
+    
+    // BEGIN IMMEDIATE 트랜잭션으로 동시성 안전하게 처리
+    const transaction = db.transaction(() => {
+      // 해당 site_id와 날짜로 시작하는 management_id 중 최대값 조회
+      const prefix = `${datePrefix}-`;
+      const maxRow = db
+        .prepare(`
+          SELECT management_id 
+          FROM videos 
+          WHERE site_id = ? AND management_id LIKE ?
+          ORDER BY management_id DESC 
+          LIMIT 1
+        `)
+        .get(siteId, `${prefix}%`) as any;
+      
+      let nextNumber = 1;
+      
+      if (maxRow?.management_id) {
+        // 기존 최대값에서 번호 추출 (예: "251227-005" -> 5)
+        const match = maxRow.management_id.match(/^(\d{6})-(\d+)$/);
+        if (match && match[2]) {
+          const currentNumber = parseInt(match[2], 10);
+          nextNumber = currentNumber + 1;
+        }
+      }
+      
+      // 새 management_id 생성 (001, 002, ...)
+      const managementId = `${datePrefix}-${String(nextNumber).padStart(3, '0')}`;
+      return managementId;
+    });
+    
+    return transaction.immediate();
+  }
+
+  /**
+   * Creator 영상 생성
+   * @param userId 사용자 ID (JWT에서 추출)
+   * @param userRole 사용자 역할 (creator 또는 admin)
+   * @param userSiteId 사용자의 site_id
+   * @param dto 영상 생성 DTO
+   * @returns 생성된 영상 정보
+   */
+  async createCreatorVideo(
+    userId: string,
+    userRole: string,
+    userSiteId: string,
+    dto: {
+      sourceType: string;
+      sourceUrl: string;
+      title?: string;
+      thumbnailUrl?: string;
+      language?: string;
+      status?: string;
+      visibility?: string;
+      site_id?: string;
+    },
+  ): Promise<any> {
+    const db = this.databaseService.getDb();
+
+    // sourceType 검증
+    const sourceType = dto.sourceType.toLowerCase();
+    if (sourceType !== 'youtube' && sourceType !== 'facebook') {
+      throw new BadRequestException({
+        message: "sourceType must be 'youtube' or 'facebook'",
+        error: 'Bad Request',
+      });
+    }
+
+    // site_id 결정 (Creator는 자신의 site_id, Admin은 body에서 받거나 user.site_id)
+    let siteId: string;
+    if (userRole === 'admin') {
+      siteId = (dto.site_id || userSiteId || 'gods').toString();
+    } else {
+      siteId = (userSiteId || 'gods').toString();
+    }
+
+    // platform 매핑
+    const platform = sourceType === 'youtube' ? 'youtube' : 'facebook';
+
+    // video_id 추출
+    let extractedVideoId: string | null = null;
+    if (platform === 'youtube') {
+      extractedVideoId = this.extractYouTubeVideoId(dto.sourceUrl);
+    } else if (platform === 'facebook') {
+      // Facebook video ID 추출
+      const match = dto.sourceUrl.match(/\/videos\/(\d+)/);
+      extractedVideoId = match ? match[1] : null;
+    }
+
+    // 기타 필드
+    const title = dto.title?.trim() || null;
+    const thumbnailUrl = dto.thumbnailUrl?.trim() || null;
+    const language = dto.language || 'en';
+    const status = dto.status || 'active';
+    const visibility = dto.visibility || 'public';
+
+    // embed_url 생성
+    let embedUrl: string | null = null;
+    if (platform === 'youtube' && extractedVideoId) {
+      embedUrl = `https://www.youtube.com/embed/${extractedVideoId}`;
+    } else if (platform === 'facebook' && extractedVideoId) {
+      embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(dto.sourceUrl)}`;
+    }
+
+    // YouTube 썸네일 자동 생성 (썸네일이 없고 video_id가 있는 경우)
+    let finalThumbnailUrl = thumbnailUrl;
+    if (!finalThumbnailUrl && platform === 'youtube' && extractedVideoId) {
+      finalThumbnailUrl = `https://img.youtube.com/vi/${extractedVideoId}/maxresdefault.jpg`;
+    }
+
+    try {
+      // 영상 생성
+      const videoId = this.generateId();
+      const now = new Date().toISOString();
+      
+      // management_id 생성 (YYMMDD-001 형식)
+      const managementId = this.generateManagementId(siteId);
+
+      db.prepare(`
+        INSERT INTO videos (
+          id, site_id, owner_id, platform, video_id, source_url, 
+          title, thumbnail_url, embed_url, language, status, visibility, 
+          management_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        videoId,
+        siteId,
+        userId,
+        platform,
+        extractedVideoId,
+        dto.sourceUrl,
+        title,
+        finalThumbnailUrl,
+        embedUrl,
+        language,
+        status,
+        visibility,
+        managementId,
+        now,
+      );
+
+      // 생성된 영상 조회
+      const video = db.prepare('SELECT * FROM videos WHERE id = ?').get(videoId) as any;
+
+      this.logger.log(
+        `[createCreatorVideo] Video created: id=${videoId}, management_id=${managementId}, title=${title?.substring(0, 30) || 'N/A'}`,
+      );
+
+      return { video };
+    } catch (error: any) {
+      this.logger.error(`[createCreatorVideo] Error: ${error.message}`);
+      throw new InternalServerErrorException({
+        message: '영상 생성 중 오류가 발생했습니다.',
+        error: 'Internal Server Error',
+        details: error.message,
+      });
+    }
+  }
+
+  /**
    * 클라이언트 ID 생성/검증 (쿠키 > body의 clientId > 헤더의 x-client-key > IP + User-Agent)
    * 없으면 IP + User-Agent로 생성
    */

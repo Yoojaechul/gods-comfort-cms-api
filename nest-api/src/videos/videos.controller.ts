@@ -7,6 +7,7 @@ import {
   UseGuards,
   Request,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -20,6 +21,7 @@ import {
   VideoMetadataRequestDto,
   VideoMetadataResponseDto,
 } from './dto/video-metadata.dto';
+import { CreateVideoDto } from './dto/create-video.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('videos')
@@ -109,5 +111,63 @@ export class CreatorVideosController {
     }
 
     return this.videosService.getCreatorVideos(user.id, targetSiteId);
+  }
+
+  /**
+   * Creator 영상 생성
+   * JWT 인증 필요 (creator/admin)
+   */
+  @Post('videos')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Creator 영상 생성' })
+  @ApiResponse({
+    status: 201,
+    description: '영상 생성 성공',
+    schema: {
+      example: {
+        video: {
+          id: 'abc123def456...',
+          site_id: 'gods',
+          owner_id: 'creator-001',
+          platform: 'youtube',
+          video_id: 'dQw4w9WgXcQ',
+          source_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          title: '샘플 영상',
+          thumbnail_url: 'https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg',
+          embed_url: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+          language: 'ko',
+          status: 'active',
+          visibility: 'public',
+          created_at: '2025-01-15T10:00:00.000Z',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: '잘못된 요청 (필수 필드 누락 등)' })
+  @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
+  @ApiResponse({ status: 403, description: 'Creator 또는 Admin 역할이 아님' })
+  async createCreatorVideo(@Request() req: any, @Body() dto: CreateVideoDto) {
+    const user = req.user;
+
+    // role 검증 (creator 또는 admin만 가능)
+    if (user.role !== 'creator' && user.role !== 'admin') {
+      throw new ForbiddenException('Only creator and admin can create videos');
+    }
+
+    // 필수 필드 검증
+    if (!dto.sourceType || !dto.sourceUrl) {
+      throw new BadRequestException({
+        message: 'sourceType and sourceUrl are required',
+        error: 'Bad Request',
+      });
+    }
+
+    return this.videosService.createCreatorVideo(
+      user.id,
+      user.role,
+      user.site_id || 'gods',
+      dto,
+    );
   }
 }

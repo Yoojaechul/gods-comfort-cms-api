@@ -4,7 +4,13 @@
  * - 썸네일 URL 정규화 유틸 포함
  */
 
-import { CMS_API_BASE } from "../config";
+/**
+ * API Base URL을 가져옵니다.
+ */
+function getApiBase(): string {
+  const env = import.meta.env;
+  return env.VITE_CMS_API_BASE_URL || env.VITE_API_BASE_URL || "https://api.godcomfortword.com";
+}
 
 export interface VideoMetadata {
   title?: string;
@@ -75,15 +81,8 @@ export async function fetchYouTubeMetadata(
   try {
     const normalized = normalizeYouTubeUrlForRequest(sourceUrlOrId);
 
-    // CMS_API_BASE를 사용 (환경 변수 기반, SPA 도메인 차단 로직 포함)
-    // window.location.origin fallback 제거 (SPA 도메인으로 API 요청하는 것 방지)
-    const base = CMS_API_BASE;
-    
-    if (!base || !base.trim()) {
-      throw new Error(
-        "API base URL is not configured. Please set VITE_CMS_API_BASE_URL or VITE_API_BASE_URL environment variable."
-      );
-    }
+    // API Base URL 가져오기
+    const base = getApiBase();
 
     // Public API 엔드포인트 사용: /public/videos/youtube/metadata
     const apiUrl = `${String(base).replace(/\/+$/, "")}/public/videos/youtube/metadata?url=${encodeURIComponent(
@@ -125,14 +124,16 @@ export async function fetchYouTubeMetadata(
 
 /**
  * 썸네일 URL 정규화
- * - 상대경로를 CMS_API_BASE 기준 절대경로로 변환
+ * - 상대경로를 API Base URL 기준 절대경로로 변환
  * - localhost/127.0.0.1 잘못된 포트가 있으면 baseUrl host로 교체
  * - data URL은 그대로
  */
 export function normalizeThumbnailUrl(
   thumbnailUrl: string | null | undefined,
-  baseUrl: string = CMS_API_BASE
+  baseUrl?: string
 ): string | null {
+  // baseUrl이 제공되지 않으면 환경 변수에서 가져오기
+  const apiBase = baseUrl || getApiBase();
   if (!thumbnailUrl || !thumbnailUrl.trim()) return null;
 
   const trimmed = thumbnailUrl.trim();
@@ -143,7 +144,7 @@ export function normalizeThumbnailUrl(
     if (trimmed.includes("127.0.0.1:7242") || trimmed.includes("localhost:7242")) {
       try {
         const u = new URL(trimmed);
-        const b = new URL(baseUrl);
+        const b = new URL(apiBase);
         u.host = b.host;
         return u.toString();
       } catch {
@@ -153,7 +154,7 @@ export function normalizeThumbnailUrl(
     return trimmed;
   }
 
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  const normalizedBase = apiBase.endsWith("/") ? apiBase.slice(0, -1) : apiBase;
   const normalizedPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
   return `${normalizedBase}${normalizedPath}`;
 }

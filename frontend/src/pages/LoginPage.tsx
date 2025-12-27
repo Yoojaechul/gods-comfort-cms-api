@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { CMS_API_BASE } from "../config";
+import { getApiBase } from "../config";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -50,8 +50,11 @@ export default function LoginPage() {
 
   const apiLabel = useMemo(() => {
     // 화면 하단에 "NestJS API: ..." 표시용 (원래 디자인 요소)
-    // CMS_API_BASE가 없으면 현재 도메인 기준으로 적당히 표시
-    return CMS_API_BASE || "API";
+    try {
+      return getApiBase() || "API";
+    } catch {
+      return "API";
+    }
   }, []);
 
   const onSubmit = async (e: React.FormEvent) => {

@@ -251,6 +251,44 @@ body {
   }
 }
 
+/* =========================================================
+   CMS Creator - small screen: hide thumbnail rail in sidebar
+   (works even if markup changes slightly)
+   ========================================================= */
+@media (max-width: 1024px) {
+  /* 1) 가장 강력: 사이드바 안쪽에서 이미지 썸네일들 숨김 */
+  .dashboard-sidebar img,
+  .admin-sidebar img,
+  aside img {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* 2) 혹시 썸네일 전용 wrapper/class가 있다면 같이 차단 */
+  .cms-sidebar-thumbnails,
+  .sidebar-thumbnails,
+  .thumbnail-rail,
+  .thumb-rail,
+  .thumbs,
+  .thumbnails {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
+  }
+}
+
+
+@media (max-width: 1024px) {
+  .cms-creator-sidebar .cms-sidebar-thumbnails,
+  .cms-creator-sidebar .thumbnail-rail,
+  .cms-creator-sidebar .thumbnails {
+    display: none !important;
+  }
+}
+
+
+
 
 
 

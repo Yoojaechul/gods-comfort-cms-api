@@ -22,25 +22,17 @@ export class DatabaseService implements OnModuleInit {
       this.configService.get<string>('DB_PATH') ||
       '/app/data/cms.db';
 
-    // DB 드라이버 및 경로 로깅 (배포 환경 진단용)
-    this.logger.log(`[DB] 드라이버: better-sqlite3`);
-    this.logger.log(`[DB] DB 파일 경로: ${dbPath}`);
-    this.logger.log(`[DB] SQLITE_DB_PATH env: ${process.env.SQLITE_DB_PATH || '(not set)'}`);
-    this.logger.log(`[DB] DB_PATH env: ${process.env.DB_PATH || '(not set)'}`);
+    // DB 경로 로깅 (1회 출력)
+    this.logger.log(`Using SQLite DB Path: ${dbPath}`);
 
     try {
       // DB 디렉터리 존재 보장 (Cloud Run에서 필요)
+      // /app/data 디렉터리가 없으면 생성
       const dbDir = path.dirname(dbPath);
       if (!fs.existsSync(dbDir)) {
         fs.mkdirSync(dbDir, { recursive: true });
         this.logger.log(`[DB] 디렉터리 생성: ${dbDir}`);
-      } else {
-        this.logger.log(`[DB] 디렉터리 존재 확인: ${dbDir}`);
       }
-
-      // DB 파일 존재 여부 확인
-      const dbFileExists = fs.existsSync(dbPath);
-      this.logger.log(`[DB] DB 파일 존재 여부: ${dbFileExists ? '존재함' : '없음 (자동 생성 예정)'}`);
 
       // better-sqlite3로 DB 열기 (파일이 없으면 자동 생성)
       this.db = new Database(dbPath);

@@ -11,6 +11,8 @@
  * - POST /auth/change-password (인증 불필요) -> { ok: true }
  * - GET /auth/me (JWT required) -> { user }
  * - GET /creator/videos (JWT required) -> { videos: [...] }
+ * - POST /creator/videos (JWT required) -> { video: {...} }
+ * - GET /public/videos/youtube/metadata (인증 불필요) -> { title: "..." }
  * 
  * 로컬 테스트:
  *   1. node server.js
@@ -109,6 +111,9 @@ await fastify.register(cors, {
 // ✅ 공개 라우트 정의 (인증 불필요)
 const PUBLIC_ROUTES = [
   { method: "GET", path: "/health" },
+  { method: "GET", path: "/public/health" },
+  { method: "GET", path: "/public/healthz" },
+  { method: "GET", path: "/public/videos/youtube/metadata" },
   { method: "POST", path: "/auth/change-password" },
   { method: "POST", path: "/auth/login" },
   { method: "GET", path: "/" },
@@ -140,6 +145,35 @@ const db = new Database(DB_PATH);
 // ==================== Utils ====================
 function generateId() {
   return crypto.randomBytes(16).toString("hex");
+}
+
+/**
+ * YouTube URL에서 video ID 추출
+ */
+function extractYouTubeVideoId(url) {
+  if (!url || typeof url !== "string") return null;
+  
+  const trimmed = url.trim();
+  
+  // Video ID만 있는 경우 (11자리 영숫자)
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+    return trimmed;
+  }
+  
+  // YouTube URL 패턴들
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/i,
+    /youtube\.com\/.*[?&]v=([a-zA-Z0-9_-]{11})/i,
+  ];
+  
+  for (const pattern of patterns) {
+    const match = trimmed.match(pattern);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+  
+  return null;
 }
 
 function pbkdf2HashPassword(password) {
@@ -377,13 +411,27 @@ function ensureCreatorFromEnv() {
 // ==================== Auth Guard (선택) ====================
 async function requireAuth(req, reply) {
   const token = getBearerToken(req);
-  if (!token) return reply.code(401).send({ error: "UNAUTHORIZED" });
+  if (!token) {
+    fastify.log.warn(`[requireAuth] No token found in Authorization header`);
+    return reply.code(401).send({ error: "UNAUTHORIZED", message: "Token not found" });
+  }
 
   const payload = verifyJwt(token);
-  if (!payload?.userId) return reply.code(401).send({ error: "UNAUTHORIZED" });
+  if (!payload?.userId) {
+    fastify.log.warn(`[requireAuth] Invalid token or missing userId`);
+    return reply.code(401).send({ error: "UNAUTHORIZED", message: "Invalid token" });
+  }
 
   const user = db.prepare("SELECT id, site_id, name, email, role, status FROM users WHERE id=?").get(payload.userId);
-  if (!user || user.status !== "active") return reply.code(401).send({ error: "UNAUTHORIZED" });
+  if (!user) {
+    fastify.log.warn(`[requireAuth] User not found: userId=${payload.userId}`);
+    return reply.code(401).send({ error: "UNAUTHORIZED", message: "User not found" });
+  }
+  
+  if (user.status !== "active") {
+    fastify.log.warn(`[requireAuth] User not active: userId=${payload.userId}, status=${user.status}`);
+    return reply.code(401).send({ error: "UNAUTHORIZED", message: "User account is not active" });
+  }
 
   req.user = user;
 }
@@ -626,6 +674,135 @@ async function getCreatorVideosHandler(req, reply) {
  */
 fastify.get("/creator/videos", { preHandler: requireAuth }, getCreatorVideosHandler);
 
+/**
+ * ✅ Creator 영상 생성
+ * POST /creator/videos
+ * JWT 인증 필요 (creator/admin)
+ * Body: { sourceType, sourceUrl, title, thumbnailUrl, language, ... }
+ */
+fastify.post("/creator/videos", { preHandler: requireAuth }, async (req, reply) => {
+  const user = req.user;
+  const body = req.body || {};
+  
+  // role 검증 (creator 또는 admin만 가능)
+  if (user.role !== "creator" && user.role !== "admin") {
+    return reply.code(403).send({ 
+      error: "FORBIDDEN", 
+      message: "Only creator and admin can create videos" 
+    });
+  }
+  
+  // 필수 필드 검증
+  const sourceType = (body.sourceType || body.videoType || "").toString().toLowerCase();
+  const sourceUrl = (body.sourceUrl || body.source_url || "").toString().trim();
+  
+  if (!sourceType || !sourceUrl) {
+    return reply.code(400).send({ 
+      error: "BAD_REQUEST", 
+      message: "sourceType and sourceUrl are required" 
+    });
+  }
+  
+  // sourceType 검증
+  if (sourceType !== "youtube" && sourceType !== "facebook") {
+    return reply.code(400).send({ 
+      error: "BAD_REQUEST", 
+      message: "sourceType must be 'youtube' or 'facebook'" 
+    });
+  }
+  
+  // site_id 결정 (Creator는 자신의 site_id, Admin은 body에서 받거나 user.site_id)
+  let siteId;
+  if (user.role === "admin") {
+    siteId = (body.site_id || user.site_id || "gods").toString();
+  } else {
+    siteId = (user.site_id || "gods").toString();
+  }
+  
+  if (!siteId) {
+    return reply.code(400).send({ 
+      error: "BAD_REQUEST", 
+      message: "site_id is required" 
+    });
+  }
+  
+  // platform 매핑 (sourceType -> platform)
+  const platform = sourceType === "youtube" ? "youtube" : "facebook";
+  
+  // video_id 추출
+  let extractedVideoId = null;
+  if (platform === "youtube") {
+    extractedVideoId = extractYouTubeVideoId(sourceUrl);
+  } else if (platform === "facebook") {
+    // Facebook video ID 추출
+    const match = sourceUrl.match(/\/videos\/(\d+)/);
+    extractedVideoId = match ? match[1] : null;
+  }
+  
+  // 기타 필드
+  const title = (body.title || "").toString().trim() || null;
+  const thumbnailUrl = (body.thumbnailUrl || body.thumbnail_url || "").toString().trim() || null;
+  const language = (body.language || body.lang || "en").toString();
+  const status = (body.status || "active").toString();
+  const visibility = (body.visibility || "public").toString();
+  
+  // embed_url 생성
+  let embedUrl = null;
+  if (platform === "youtube" && extractedVideoId) {
+    embedUrl = `https://www.youtube.com/embed/${extractedVideoId}`;
+  } else if (platform === "facebook" && extractedVideoId) {
+    embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(sourceUrl)}`;
+  }
+  
+  // YouTube 썸네일 자동 생성 (썸네일이 없고 video_id가 있는 경우)
+  let finalThumbnailUrl = thumbnailUrl;
+  if (!finalThumbnailUrl && platform === "youtube" && extractedVideoId) {
+    finalThumbnailUrl = `https://img.youtube.com/vi/${extractedVideoId}/maxresdefault.jpg`;
+  }
+  
+  try {
+    // 영상 생성
+    const videoId = generateId();
+    const now = new Date().toISOString();
+    
+    db.prepare(`
+      INSERT INTO videos (
+        id, site_id, owner_id, platform, video_id, source_url, 
+        title, thumbnail_url, embed_url, language, status, visibility, 
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      videoId,
+      siteId,
+      user.id,
+      platform,
+      extractedVideoId,
+      sourceUrl,
+      title,
+      finalThumbnailUrl,
+      embedUrl,
+      language,
+      status,
+      visibility,
+      now
+    );
+    
+    // 생성된 영상 조회
+    const video = db.prepare("SELECT * FROM videos WHERE id = ?").get(videoId);
+    
+    fastify.log.info(`✅ [POST /creator/videos] Video created: id=${videoId}, title=${title?.substring(0, 30) || "N/A"}`);
+    
+    return reply.code(201).send({ video });
+  } catch (error) {
+    fastify.log.error(`❌ [POST /creator/videos] Error:`, error);
+    return reply.code(500).send({ 
+      error: "INTERNAL_SERVER_ERROR", 
+      message: "Failed to create video",
+      details: error.message 
+    });
+  }
+});
+
 // ==================== Boot ====================
 async function start() {
   fastify.log.info("============================================================");
@@ -664,6 +841,8 @@ async function start() {
   fastify.log.info(`   - POST /auth/change-password (인증 불필요)`);
   fastify.log.info(`   - GET /auth/me (JWT required)`);
   fastify.log.info(`   - GET /creator/videos (JWT required)`);
+  fastify.log.info(`   - POST /creator/videos (JWT required)`);
+  fastify.log.info(`   - GET /public/videos/youtube/metadata (인증 불필요)`);
   fastify.log.info("============================================================");
 }
 
@@ -688,3 +867,51 @@ fastify.get("/__bootstrap/creator", async () => {
 
   return { status: "creator-created" };
 });
+
+
+// ================================
+// [MAINTENANCE] Regenerate management_id for existing videos (ADMIN ONLY)
+// ================================
+
+// ✅ 아주 단순한 보호장치(운영에서 꼭 바꾸세요)
+// .env에 MAINTENANCE_KEY 를 넣고, 요청 헤더로 맞는 키가 들어와야 실행되게 합니다.
+function requireMaintenanceKey(req, res, next) {
+  const key = req.headers["x-maintenance-key"];
+  if (!process.env.MAINTENANCE_KEY) {
+    return res.status(500).json({ error: "MAINTENANCE_KEY is not set on server" });
+  }
+  if (!key || key !== process.env.MAINTENANCE_KEY) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+}
+
+// ⚠️ db가 better-sqlite3 인스턴스라고 가정합니다.
+// (프로젝트에서 db.js를 쓰고 있으면 그 db를 그대로 사용)
+app.post("/admin/maintenance/regenerate-management-ids", requireMaintenanceKey, (req, res) => {
+  try {
+    // 1) 비어있는 management_id만 채움
+    const stmt = db.prepare(`
+      UPDATE videos
+      SET management_id = substr(id, 1, 12)
+      WHERE management_id IS NULL OR trim(management_id) = ''
+    `);
+
+    const result = stmt.run();
+
+    // 2) 샘플 몇개 확인용
+    const sample = db
+      .prepare(`SELECT id, management_id, title FROM videos ORDER BY created_at DESC LIMIT 10`)
+      .all();
+
+    return res.json({
+      ok: true,
+      updated: result.changes,
+      sample,
+    });
+  } catch (e) {
+    console.error("[regenerate-management-ids] error:", e);
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+

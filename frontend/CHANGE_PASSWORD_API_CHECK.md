@@ -227,3 +227,9 @@ console.log(import.meta.env.VITE_CMS_API_BASE_URL);
 - SPA 호스팅 도메인(`cms.godcomfortword.com`)을 API baseURL로 사용하는 것을 방지하는 검증 로직 포함
 
 
+
+
+
+
+
+

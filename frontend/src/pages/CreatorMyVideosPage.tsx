@@ -28,14 +28,16 @@ export default function CreatorMyVideosPage() {
     setError(null);
 
     try {
-      // ✅ 토큰은 apiClient가 localStorage에서 가져가서 Authorization 붙임
+      // ✅ Creator 영상 목록 API: POST /creator/videos (토큰은 apiClient가 자동으로 Authorization 헤더에 추가)
       const data = await apiGet<any>("/creator/videos");
 
-      // Safe array extraction with multiple fallbacks
+      // API 응답 형식: {"videos":[...]} 또는 배열 직접 반환
       let list: Video[] = [];
       if (Array.isArray(data)) {
+        // 배열이 직접 반환된 경우
         list = data;
       } else if (data && typeof data === 'object') {
+        // 객체인 경우 videos 필드 우선 확인 (가장 일반적인 응답 형식)
         if (Array.isArray(data.videos)) {
           list = data.videos;
         } else if (Array.isArray(data.data)) {
@@ -48,15 +50,32 @@ export default function CreatorMyVideosPage() {
       // Ensure list is always an array
       setVideos(Array.isArray(list) ? list : []);
     } catch (e: any) {
-      console.error("Failed to load videos:", e);
+      console.error("[CreatorMyVideosPage] Failed to load videos:", e);
       setVideos([]);
       
-      // HTML 응답 에러 메시지 처리
-      const errorMsg = e?.message || "목록을 불러오지 못했습니다.";
-      if (errorMsg.includes("API endpoint mismatch") || errorMsg.includes("received HTML")) {
-        setError("API endpoint mismatch (received HTML). Check API_BASE_URL.");
-      } else {
-        setError(errorMsg);
+      // 에러 메시지 추출 및 사용자 친화적으로 변환
+      const errorMsg = e?.message || "영상 목록을 불러오는 중 오류가 발생했습니다.";
+      
+      // 401/403 인증 오류
+      if (e?.status === 401 || e?.status === 403 || errorMsg.includes("권한") || errorMsg.includes("인증")) {
+        setError("로그인이 필요합니다. 다시 로그인해주세요.");
+      }
+      // 404 오류
+      else if (e?.status === 404 || errorMsg.includes("404")) {
+        setError("영상 목록을 불러올 수 없습니다. API 서버를 확인해주세요.");
+      }
+      // 네트워크 오류
+      else if (errorMsg.includes("Failed to fetch") || errorMsg.includes("Network")) {
+        setError("네트워크 오류가 발생했습니다. 연결을 확인해주세요.");
+      }
+      // 기타 오류
+      else {
+        // 사용자에게 불필요한 기술적 세부사항 제거
+        const cleanMsg = errorMsg
+          .replace(/\|.*$/g, "") // "| URL: ..." 같은 디버깅 정보 제거
+          .replace(/URL:.*/g, "") // URL 정보 제거
+          .trim();
+        setError(cleanMsg || "영상 목록을 불러오는 중 오류가 발생했습니다.");
       }
     } finally {
       setLoading(false);
@@ -131,14 +150,16 @@ export default function CreatorMyVideosPage() {
       {loading ? (
         <div style={{ padding: 18 }}>불러오는 중...</div>
       ) : (
-        <VideoTable
-          videos={videos || []}
-          selectedVideos={selectedVideos}
-          onSelectChange={setSelectedVideos}
-          isAdmin={false}
-          token={token || ""}
-          onRefresh={loadMyVideos}
-        />
+        <div style={{ overflowX: 'auto', width: '100%' }}>
+          <VideoTable
+            videos={videos || []}
+            selectedVideos={selectedVideos}
+            onSelectChange={setSelectedVideos}
+            isAdmin={false}
+            token={token || ""}
+            onRefresh={loadMyVideos}
+          />
+        </div>
       )}
 
       {showVideoFormModal && (

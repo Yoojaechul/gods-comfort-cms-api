@@ -156,3 +156,9 @@ VITE_API_BASE_URL=https://api.godcomfortword.com
 - 빌드 시점에 환경 변수가 설정되어야 합니다.
 - `.env.production` 파일을 사용하는 경우, 파일이 프로젝트 루트에 있어야 합니다.
 
+
+
+
+
+
+

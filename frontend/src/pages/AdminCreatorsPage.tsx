@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CMS_API_BASE } from "../config";
+import { getApiBase } from "../config";
 import { useAuth } from "../contexts/AuthContext";
 import { formatDateTimeKST } from "../utils/date";
 import "../styles/admin-common.css";
@@ -46,7 +46,7 @@ export default function AdminCreatorsPage() {
       
       for (const endpoint of endpoints) {
         try {
-          const response = await fetch(`${CMS_API_BASE}${endpoint}`, {
+          const response = await fetch(`${getApiBase()}${endpoint}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -145,7 +145,7 @@ export default function AdminCreatorsPage() {
         for (const endpoint of endpoints) {
           for (const method of methods) {
             try {
-              const response = await fetch(`${CMS_API_BASE}${endpoint}/${editingCreator.id}`, {
+              const response = await fetch(`${getApiBase()}${endpoint}/${editingCreator.id}`, {
                 method,
           headers: {
             "Content-Type": "application/json",
@@ -208,7 +208,7 @@ export default function AdminCreatorsPage() {
         
         for (const endpoint of endpoints) {
           try {
-            const response = await fetch(`${CMS_API_BASE}${endpoint}`, {
+            const response = await fetch(`${getApiBase()}${endpoint}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -259,7 +259,7 @@ export default function AdminCreatorsPage() {
     }
 
     try {
-      const response = await fetch(`${CMS_API_BASE}/admin/creators/${id}`, {
+      const response = await fetch(`${getApiBase()}/admin/creators/${id}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,

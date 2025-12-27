@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import DashboardLayout from "../components/DashboardLayout";
-import { CMS_API_BASE } from "../config";
+import { getApiBase } from "../config";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function FacebookKeysPage() {
@@ -26,7 +26,7 @@ export default function FacebookKeysPage() {
   const fetchKeys = async () => {
     try {
       const endpoint = isAdmin ? "/admin/facebook-keys" : "/my/facebook-keys";
-      const response = await fetch(`${CMS_API_BASE}${endpoint}`, {
+      const response = await fetch(`${getApiBase()}${endpoint}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
@@ -46,7 +46,7 @@ export default function FacebookKeysPage() {
         : "/my/facebook-keys";
       const method = isAdmin ? "PUT" : "PUT";
 
-      await fetch(`${CMS_API_BASE}${endpoint}`, {
+      await fetch(`${getApiBase()}${endpoint}`, {
         method,
         headers: {
           Authorization: `Bearer ${token}`,

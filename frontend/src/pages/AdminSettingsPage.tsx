@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CMS_API_BASE } from "../config";
+import { getApiBase } from "../config";
 import { useAuth } from "../contexts/AuthContext";
 import "../styles/admin-settings.css";
 import "../styles/admin-common.css";
@@ -80,7 +80,7 @@ export default function AdminSettingsPage() {
     
     for (const endpoint of endpoints) {
     try {
-        const response = await fetch(`${CMS_API_BASE}${endpoint}`, {
+        const response = await fetch(`${getApiBase()}${endpoint}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -140,7 +140,7 @@ export default function AdminSettingsPage() {
     setFormData({
       name: "God's Comfort Word",
       base_url: "https://www.godscomfortword.com",
-      api_url: CMS_API_BASE,
+      api_url: getApiBase(),
     });
     setError(null);
     setSuccessMessage(null);
@@ -183,8 +183,8 @@ export default function AdminSettingsPage() {
       for (const endpoint of endpoints) {
         try {
           const url = existingSiteId 
-            ? `${CMS_API_BASE}${endpoint}/${existingSiteId}`
-            : `${CMS_API_BASE}${endpoint}`;
+            ? `${getApiBase()}${endpoint}/${existingSiteId}`
+            : `${getApiBase()}${endpoint}`;
           
           const response = await fetch(url, {
             method,
@@ -333,7 +333,7 @@ export default function AdminSettingsPage() {
             type="url"
             value={formData.api_url}
             onChange={(e) => setFormData({ ...formData, api_url: e.target.value })}
-            placeholder={CMS_API_BASE}
+            placeholder={getApiBase()}
             style={{
               width: "100%",
               padding: "8px 12px",

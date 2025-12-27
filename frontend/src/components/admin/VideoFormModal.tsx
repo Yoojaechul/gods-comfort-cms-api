@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Video, VideoPayload } from "../../types/video";
-import { CMS_API_BASE } from "../../config";
 import { useAuth } from "../../contexts/AuthContext";
 import { uploadThumbnail } from "../../lib/cmsClient";
 import { getVideoApiEndpoint } from "../../lib/videoApi";
 import { buildVideoPayload } from "../../utils/videoPayload";
+import { apiPost, apiPut } from "../../lib/apiClient";
 import {
   fetchYouTubeMetadata,
   validateYouTubeUrl,
@@ -179,7 +179,7 @@ export default function VideoFormModal({
 
   const normalizedPreviewSrc = useMemo(() => {
     const src = formData.thumbnailUrl;
-    return normalizeThumbnailUrl(src, CMS_API_BASE) || src || "";
+    return normalizeThumbnailUrl(src) || src || "";
   }, [formData.thumbnailUrl]);
 
   const handleThumbnailFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -237,9 +237,6 @@ export default function VideoFormModal({
         mode === "edit" ? String(initialVideo?.id || "") : undefined
       );
 
-      const url = `${CMS_API_BASE}${apiPath}`;
-      const method = mode === "create" ? "POST" : "PUT";
-
       // 최종 썸네일 URL
       const finalThumbnailUrl = (formData.thumbnailUrl || "").trim() || null;
 
@@ -284,26 +281,10 @@ export default function VideoFormModal({
         payload.share_display = payload.shareDisplay;
       }
 
-      const resp = await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!resp.ok) {
-        const t = await resp.text().catch(() => "");
-        let msg = "저장에 실패했습니다.";
-        try {
-          const j = JSON.parse(t);
-          msg = j.message || j.error || msg;
-        } catch {}
-        throw new Error(msg);
-      }
-
-      const responseData = await resp.json();
+      // apiClient 사용하여 일관된 에러 핸들링 및 Authorization 헤더 자동 포함
+      const responseData = mode === "create" 
+        ? await apiPost(apiPath, payload)
+        : await apiPut(apiPath, payload);
       const rawVideo = responseData.video || responseData.data || responseData;
 
       const updatedVideo: Video = {
