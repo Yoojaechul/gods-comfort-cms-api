@@ -8,6 +8,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { FacebookKeyModule } from './facebook-key/facebook-key.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { DebugModule } from './debug/debug.module';
+import { MaintenanceModule } from './admin/maintenance/maintenance.module';
 
 @Module({
   controllers: [AppController],
@@ -32,6 +33,8 @@ import { DebugModule } from './debug/debug.module';
     // 디버그 모듈 (DEBUG_ENDPOINTS=true일 때만 활성화)
     // ⚠️ 중요: 배포 후 원인 확인이 끝나면 DEBUG_ENDPOINTS=false로 되돌려주세요.
     DebugModule,
+    // Maintenance 모듈
+    MaintenanceModule,
   ],
 })
 export class AppModule {}
