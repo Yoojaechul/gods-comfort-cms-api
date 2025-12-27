@@ -8,11 +8,11 @@ export class UploadsService {
   /**
    * 썸네일 파일 저장
    * @param file - 업로드된 파일
-   * @returns 저장된 파일의 URL과 파일명
+   * @returns 저장된 파일의 썸네일 URL
    */
   async saveThumbnail(
     file: Express.Multer.File,
-  ): Promise<{ url: string; filename: string; video_id?: string | null }> {
+  ): Promise<{ thumbnailUrl: string }> {
     // 업로드 디렉토리 경로 (프로젝트 루트 기준)
     const uploadsDir = path.join(process.cwd(), 'uploads', 'thumbnails');
 
@@ -41,9 +41,7 @@ export class UploadsService {
     const thumbnailUrl = `${baseUrl}/uploads/thumbnails/${filename}`;
 
     return {
-      url: thumbnailUrl,
-      filename: filename,
-      video_id: null, // video_id는 추후 확장 가능
+      thumbnailUrl: thumbnailUrl,
     };
   }
 }

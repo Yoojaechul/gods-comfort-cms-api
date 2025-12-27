@@ -9,6 +9,7 @@ import { FacebookKeyModule } from './facebook-key/facebook-key.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { DebugModule } from './debug/debug.module';
 import { MaintenanceModule } from './admin/maintenance/maintenance.module';
+import { AdminVideosModule } from './admin/videos/videos.module';
 
 @Module({
   controllers: [AppController],
@@ -35,6 +36,8 @@ import { MaintenanceModule } from './admin/maintenance/maintenance.module';
     DebugModule,
     // Maintenance 모듈
     MaintenanceModule,
+    // Admin Videos 모듈
+    AdminVideosModule,
   ],
 })
 export class AppModule {}

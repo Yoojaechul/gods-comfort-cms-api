@@ -272,22 +272,16 @@ export default function BulkVideosModal({ onClose, onSuccess }: BulkVideosModalP
       updateRow(index, "uploadingThumbnail", true);
       setError(null);
 
-      // role에 따라 썸네일 업로드 엔드포인트 선택
-      if (!user?.role) {
-        throw new Error("사용자 역할 정보를 찾을 수 없습니다. 다시 로그인해주세요.");
-      }
-      const userRole = user.role as "admin" | "creator";
-      
       console.log(`[대량 등록/편집] 행 ${index + 1} 썸네일 업로드 시작:`, {
         fileName: file.name,
         fileType: file.type,
         fileSize: file.size,
-        userRole,
       });
       
-      const result = await uploadThumbnail(file, userRole);
+      const result = await uploadThumbnail(file);
+      const thumbnailUrl = result?.url || result?.thumbnailUrl || result?.thumbnail_url;
       
-      if (result && result.url) {
+      if (thumbnailUrl) {
         // 업로드 성공 시 즉시 실제 URL로 업데이트 (data URL 대체)
         // 함수형 업데이트를 사용하여 최신 상태 보장
         setRows((prevRows) => {
@@ -295,13 +289,13 @@ export default function BulkVideosModal({ onClose, onSuccess }: BulkVideosModalP
           if (newRows[index]) {
             newRows[index] = {
               ...newRows[index],
-              thumbnailUrl: result.url, // 업로드된 실제 URL로 업데이트
+              thumbnailUrl, // 업로드된 실제 URL로 업데이트
               uploadingThumbnail: false,
             };
             
             console.log(`[대량 등록/편집] 행 ${index + 1} 썸네일 업로드 완료 및 상태 업데이트:`, {
               sourceType: newRows[index].sourceType,
-              uploadedUrl: result.url,
+              uploadedUrl: thumbnailUrl,
               rowIndex: index,
               updatedThumbnailUrl: newRows[index].thumbnailUrl,
             });
@@ -310,7 +304,7 @@ export default function BulkVideosModal({ onClose, onSuccess }: BulkVideosModalP
         });
       } else {
         // 업로드 실패 시 안내 메시지 표시
-        console.warn(`[대량 등록/편집] 행 ${index + 1} 썸네일 업로드 실패: 서버에 업로드 엔드포인트가 없습니다.`);
+        console.warn(`[대량 등록/편집] 행 ${index + 1} 썸네일 업로드 실패: 서버 응답에 URL이 없습니다.`);
         setError("썸네일 업로드에 실패했습니다. 썸네일 URL을 직접 입력해주세요.");
         // 업로드 실패 시 data URL 제거 (사용자가 수동으로 URL 입력해야 함)
         updateRow(index, "thumbnailUrl", "");

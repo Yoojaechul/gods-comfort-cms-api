@@ -195,12 +195,11 @@ export default function VideoFormModal({
       setUploadingThumbnail(true);
       setError(null);
 
-      if (!user?.role) throw new Error("사용자 역할 정보를 찾을 수 없습니다. 다시 로그인해주세요.");
+      const uploadResult = await uploadThumbnail(file);
+      const thumbnailUrl = uploadResult?.url || uploadResult?.thumbnailUrl || uploadResult?.thumbnail_url;
+      if (!thumbnailUrl) throw new Error("썸네일 업로드에 실패했습니다.");
 
-      const uploadResult = await uploadThumbnail(file, user.role as any);
-      if (!uploadResult?.url) throw new Error("썸네일 업로드에 실패했습니다.");
-
-      setFormData((p) => ({ ...p, thumbnailUrl: uploadResult.url }));
+      setFormData((p) => ({ ...p, thumbnailUrl }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "썸네일 업로드 실패");
     } finally {

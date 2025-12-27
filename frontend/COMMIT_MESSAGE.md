@@ -45,3 +45,4 @@ style: Make VideoTable more compact with centered title column and improved spac
 - ✅ 린터 오류 없음
 - ✅ CSS 파일 포함 확인 (25.26 kB)
 
+
