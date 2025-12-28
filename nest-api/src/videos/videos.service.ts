@@ -179,20 +179,142 @@ export class VideosService {
 
   /**
    * Creator 영상 목록 조회
-   * owner_id와 site_id를 기반으로 자신의 영상만 반환
+   * creatorId와 site_id를 기반으로 자신의 영상만 반환
    */
-  async getCreatorVideos(ownerId: string, siteId: string): Promise<{ videos: any[] }> {
-    const db = this.databaseService.getDb();
-    
-    const videos = db
-      .prepare(
-        "SELECT * FROM videos WHERE site_id = ? AND owner_id = ? ORDER BY created_at DESC"
-      )
-      .all(siteId, ownerId) as any[];
+  async getCreatorVideos(creatorId: string, siteId: string | null): Promise<{ videos: any[] }> {
+    // creatorId 유효성 검사
+    if (!creatorId) {
+      throw new BadRequestException('creatorId is missing');
+    }
 
-    return {
-      videos: videos || [],
-    };
+    const db = this.databaseService.getDb();
+
+    try {
+      // videos 테이블 스키마 확인
+      const cols = db
+        .prepare(`PRAGMA table_info(videos)`)
+        .all() as Array<{ name: string }>;
+      const columnNames = cols.map((c) => c.name);
+
+      // 필요한 컬럼 존재 여부 확인
+      const hasOwnerId = columnNames.includes('owner_id');
+      const hasCreatedBy = columnNames.includes('created_by');
+      const hasSiteId = columnNames.includes('site_id');
+      const hasCreatedAt = columnNames.includes('created_at');
+
+      // owner_id 또는 created_by 컬럼 중 하나는 반드시 있어야 함
+      if (!hasOwnerId && !hasCreatedBy) {
+        this.logger.warn(
+          '[getCreatorVideos] videos 테이블에 owner_id 또는 created_by 컬럼이 없습니다. 빈 배열을 반환합니다.',
+        );
+        return { videos: [] };
+      }
+
+      const ownerColumn = hasOwnerId ? 'owner_id' : 'created_by';
+
+      // site_id 컬럼이 없으면 siteId 필터링 제외
+      let sql: string;
+      let params: any[];
+
+      if (siteId && hasSiteId) {
+        sql = `SELECT * FROM videos WHERE site_id = ? AND ${ownerColumn} = ?`;
+        params = [siteId, creatorId];
+      } else {
+        sql = `SELECT * FROM videos WHERE ${ownerColumn} = ?`;
+        params = [creatorId];
+      }
+
+      // created_at 컬럼이 있으면 정렬 추가
+      if (hasCreatedAt) {
+        sql += ` ORDER BY created_at DESC`;
+      }
+
+      // SQL과 바인딩 파라미터 로그
+      this.logger.log(`[getCreatorVideos] SQL: ${sql}`);
+      this.logger.log(
+        `[getCreatorVideos] Parameters: siteId=${siteId}, creatorId=${creatorId}, using column=${ownerColumn}`,
+      );
+
+      // 쿼리 실행
+      const videos = db.prepare(sql).all(...params) as any[];
+
+      // 결과가 없거나 null이면 빈 배열 반환
+      if (!videos || !Array.isArray(videos)) {
+        this.logger.warn('[getCreatorVideos] 쿼리 결과가 배열이 아닙니다. 빈 배열을 반환합니다.');
+        return { videos: [] };
+      }
+
+      return {
+        videos: videos,
+      };
+    } catch (error) {
+      // 실제 에러 객체를 console.error로 로그에 남기기
+      console.error('[getCreatorVideos] 에러 발생:', error);
+      
+      // 에러 타입에 따라 적절한 HttpException throw
+      if (error instanceof BadRequestException) {
+        // 이미 BadRequestException인 경우 그대로 전파
+        throw error;
+      }
+
+      // 데이터베이스 관련 에러 처리
+      if (error instanceof Error) {
+        const errorMessage = error.message || String(error);
+        
+        // SQLite 스키마 에러 (테이블 없음, 컬럼 없음 등)
+        if (
+          errorMessage.includes('no such table') ||
+          errorMessage.includes('no such column') ||
+          errorMessage.includes('SQLITE_ERROR')
+        ) {
+          this.logger.error(
+            `[getCreatorVideos] 데이터베이스 스키마 에러: ${errorMessage}`,
+          );
+          throw new InternalServerErrorException({
+            message: '데이터베이스 스키마 오류가 발생했습니다.',
+            error: 'Internal Server Error',
+          });
+        }
+
+        // 데이터베이스 연결 에러
+        if (
+          errorMessage.includes('database is locked') ||
+          errorMessage.includes('SQLITE_BUSY') ||
+          errorMessage.includes('unable to open database')
+        ) {
+          this.logger.error(
+            `[getCreatorVideos] 데이터베이스 연결 에러: ${errorMessage}`,
+          );
+          throw new InternalServerErrorException({
+            message: '데이터베이스 연결 오류가 발생했습니다.',
+            error: 'Internal Server Error',
+          });
+        }
+
+        // SQL 문법 에러
+        if (
+          errorMessage.includes('syntax error') ||
+          errorMessage.includes('SQLITE_MISUSE')
+        ) {
+          this.logger.error(
+            `[getCreatorVideos] SQL 문법 에러: ${errorMessage}`,
+          );
+          throw new InternalServerErrorException({
+            message: '데이터베이스 쿼리 오류가 발생했습니다.',
+            error: 'Internal Server Error',
+          });
+        }
+      }
+
+      // 예상치 못한 에러
+      this.logger.error(
+        `[getCreatorVideos] 예상치 못한 에러: ${error instanceof Error ? error.stack : String(error)}`,
+      );
+      throw new InternalServerErrorException({
+        message: '영상 목록을 조회하는 중 오류가 발생했습니다.',
+        error: 'Internal Server Error',
+      });
+    }
   }
 
   /**

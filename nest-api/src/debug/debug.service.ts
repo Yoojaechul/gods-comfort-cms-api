@@ -287,6 +287,46 @@ export class DebugService {
   }
 
   /**
+   * 테이블 스키마 조회
+   * PRAGMA table_info()를 사용하여 테이블의 컬럼 정보를 반환
+   */
+  async getTableSchema(tableName: string): Promise<Array<{
+    cid: number;
+    name: string;
+    type: string;
+    notnull: number;
+    dflt_value: any;
+    pk: number;
+  }>> {
+    // 허용된 테이블 이름만 허용 (SQL injection 방지)
+    const allowedTables = ['users', 'videos'];
+    if (!allowedTables.includes(tableName)) {
+      throw new Error(`허용되지 않은 테이블 이름입니다: ${tableName}`);
+    }
+
+    const db = this.databaseService.getDb();
+    
+    try {
+      // PRAGMA는 파라미터화를 지원하지 않으므로 화이트리스트 검증 후 사용
+      const result = db
+        .prepare(`PRAGMA table_info('${tableName}')`)
+        .all() as Array<{
+          cid: number;
+          name: string;
+          type: string;
+          notnull: number;
+          dflt_value: any;
+          pk: number;
+        }>;
+      
+      return result;
+    } catch (error) {
+      this.logger.error(`테이블 스키마 조회 실패: ${tableName}`, error);
+      throw error;
+    }
+  }
+
+  /**
    * 해시/솔트 마스킹 (앞 8글자 + ... + 뒤 8글자)
    */
   private maskHash(hash: string): string {

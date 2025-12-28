@@ -141,6 +141,34 @@ npm run start:prod
 - **File**: 환경변수 `SQLITE_DB_PATH`로 설정 (기본값: `/app/data/cms.db`)
 - **ORM**: 사용 안 함 (better-sqlite3 직접 사용)
 
+### ☁️ Cloud Run 배포 시 필수 환경변수
+
+Cloud Run에 배포할 때는 다음 환경변수를 반드시 설정해야 합니다:
+
+**필수 환경변수:**
+- `JWT_SECRET`: JWT 토큰 서명에 사용되는 비밀키 (반드시 설정 필요)
+- `SQLITE_DB_PATH`: SQLite 데이터베이스 파일 경로 (기본값: `/app/data/cms.db`)
+- `PORT`: 서버 포트 (Cloud Run이 자동으로 설정하므로 일반적으로 설정 불필요)
+
+**선택 환경변수:**
+- `JWT_EXPIRES_IN`: JWT 토큰 유효 기간 (기본값: `7d`)
+- `CMS_TEST_ADMIN_EMAIL`: 초기 관리자 계정 이메일
+- `CMS_TEST_ADMIN_PASSWORD`: 초기 관리자 계정 비밀번호
+- `CMS_TEST_CREATOR_EMAIL`: 초기 크리에이터 계정 이메일
+- `CMS_TEST_CREATOR_PASSWORD`: 초기 크리에이터 계정 비밀번호
+- `DEBUG_ENDPOINTS`: 디버그 엔드포인트 활성화 여부 (기본값: `false`)
+- `FACEBOOK_ACCESS_TOKEN`: Facebook Graph API Access Token
+- `CORS_ORIGINS`: CORS 허용 origin 목록 (쉼표로 구분)
+
+**환경변수 설정 방법:**
+```powershell
+gcloud run services update cms-api `
+  --set-env-vars "JWT_SECRET=your-secret-key,SQLITE_DB_PATH=/app/data/cms.db" `
+  --region asia-northeast3
+```
+
+자세한 배포 가이드는 [DOCKER_DEPLOY.md](./DOCKER_DEPLOY.md)를 참고하세요.
+
 ### ⚠️ 중요: Cloud Run 배포 시 데이터 영구성 문제
 
 현재 SQLite 파일 기반 데이터베이스를 사용하고 있습니다. **Cloud Run 환경에서는 재배포/인스턴스 교체 시 데이터가 유실될 수 있습니다.**

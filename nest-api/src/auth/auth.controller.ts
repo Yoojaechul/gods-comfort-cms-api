@@ -29,6 +29,7 @@
  *
  * ============================================================================
  */
+import { Public } from './public.decorator';
 
 import {
   Controller,
@@ -37,9 +38,11 @@ import {
   Body,
   UseGuards,
   Req,
+  Headers,
   ForbiddenException,
   BadRequestException,
   NotFoundException,
+  UnauthorizedException,
   Logger,
 } from "@nestjs/common";
 import {
@@ -357,17 +360,18 @@ export class AuthController {
     );
   }
 
-  /**
-   * Seed 상태 진단 엔드포인트
-   * - NODE_ENV !== 'production' 또는 CMS_DEBUG=true일 때만 활성화
-   * - 응답에는 "이메일", "hash 길이", "salt 길이", "updated_at", "force update 적용 여부", "env 존재 여부"만 포함
-   * - password/hash/salt 원문은 절대 노출 금지
-   */
-  @Get("seed-status")
-  @ApiOperation({ summary: "Seed 상태 진단 (디버그용)" })
-  @ApiResponse({ status: 200, description: "Seed 상태 정보 반환" })
-  @ApiResponse({ status: 403, description: "프로덕션 환경에서는 접근 불가" })
-  async getSeedStatus() {
+/**
+ * Seed 상태 진단 엔드포인트
+ * - NODE_ENV !== 'production' 또는 CMS_DEBUG=true일 때만 활성화
+ * - 응답에는 "이메일", "hash 길이", "salt 길이", "updated_at", "force update 적용 여부", "env 존재 여부"만 포함
+ * - password/hash/salt 원문은 절대 노출 금지
+ */
+@Public()
+@Get("seed-status")
+@ApiOperation({ summary: "Seed 상태 진단 (디버그용)" })
+@ApiResponse({ status: 200, description: "Seed 상태 정보 반환" })
+@ApiResponse({ status: 403, description: "프로덕션 환경에서는 접근 불가" })
+async getSeedStatus() {
     // 운영 안전장치: NODE_ENV !== 'production' 또는 CMS_DEBUG=true일 때만 활성화
     const isProduction = process.env.NODE_ENV === "production";
     const isDebugEnabled = process.env.CMS_DEBUG === "true";
@@ -386,28 +390,31 @@ export class AuthController {
 
   /**
    * Seed 실행 엔드포인트
-   * - NODE_ENV !== 'production' 또는 CMS_DEBUG=true일 때만 활성화
+   * - CMS_DEBUG=true 체크 (프로덕션 환경에서만)
+   * - 시크릿 헤더(x-seed-secret) 인증 필요
    * - 관리자/크리에이터 계정 생성 또는 업데이트
    */
+  @Public()
   @Post("seed-run")
   @ApiOperation({ summary: "Seed 실행 (관리자/크리에이터 계정 생성)" })
   @ApiResponse({ status: 200, description: "Seed 실행 완료" })
-  @ApiResponse({ status: 403, description: "프로덕션 환경 접근 불가" })
-  async seedRun() {
-    // 운영 안전장치: NODE_ENV !== 'production' 또는 CMS_DEBUG=true일 때만 활성화
-    const isProduction = process.env.NODE_ENV === "production";
-    const isDebugEnabled = process.env.CMS_DEBUG === "true";
-
-    if (isProduction && !isDebugEnabled) {
-      this.logger.warn(
-        "[SEED_RUN] 프로덕션 환경에서 CMS_DEBUG=true 없이 접근 시도",
-      );
-      throw new ForbiddenException(
-        "이 엔드포인트는 프로덕션 환경에서 CMS_DEBUG=true일 때만 사용 가능합니다.",
-      );
+  @ApiResponse({ status: 401, description: "시크릿 헤더가 유효하지 않음" })
+  @ApiResponse({ status: 403, description: "프로덕션 환경에서는 CMS_DEBUG=true 필요 또는 SEED_SECRET 미설정" })
+  async seedRun(@Headers('x-seed-secret') seedSecret?: string) {
+    // 1) CMS_DEBUG 체크(기존 로직 유지)
+    if (process.env.NODE_ENV === 'production' && process.env.CMS_DEBUG !== 'true') {
+      throw new ForbiddenException('이 엔드포인트는 프로덕션 환경에서 CMS_DEBUG=true일 때만 사용 가능합니다.');
     }
 
-    this.logger.log("[SEED_RUN] Seed 실행 요청");
+    // 2) 추가 보호: 시크릿 헤더 없으면 차단
+    const expected = process.env.SEED_SECRET;
+    if (!expected) throw new ForbiddenException('SEED_SECRET is not set');
+    if (!seedSecret || seedSecret !== expected) {
+      throw new UnauthorizedException('Seed secret is invalid');
+    }
+
+    // 3) 여기서 seed 실행(기존 코드)
+    this.logger.log('[SEED_RUN] Seed 실행 요청 (시크릿 헤더 인증 성공)');
     return this.authService.seedRun();
   }
 }

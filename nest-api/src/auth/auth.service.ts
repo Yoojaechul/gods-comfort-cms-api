@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -16,7 +17,7 @@ import { SetupPasswordDto } from './dto/setup-password.dto';
 import { CheckEmailDto } from './dto/check-email.dto';
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
@@ -26,16 +27,80 @@ export class AuthService {
   ) {}
 
   /**
+   * NestJS lifecycle hook: 모듈 초기화 시 자동 실행
+   * - 서버 부팅 시 DatabaseService 초기화 후 실행됨
+   * - CMS_DEBUG와 무관하게 실행
+   * - 프로덕션에서도 동작
+   */
+  async onModuleInit() {
+    await this.ensureInitialUsers();
+  }
+
+  /**
+   * 초기 사용자 계정 생성 (서버 부팅 시 자동 실행)
+   * - 관리자 및 크리에이터 계정이 없으면 생성
+   * - 이미 존재하는 email이면 생성하지 않음
+   * - CMS_DEBUG와 무관하게 실행됨
+   */
+  private async ensureInitialUsers() {
+    try {
+      this.logger.log('[INIT] Ensuring initial users...');
+
+      // 관리자 계정 확인 및 생성
+      const adminEmail = this.configService.get<string>('CMS_TEST_ADMIN_EMAIL');
+      const adminPassword = this.configService.get<string>('CMS_TEST_ADMIN_PASSWORD');
+
+      if (adminEmail && adminPassword) {
+        const existingAdmin = this.databaseService.findUserByEmail(adminEmail);
+        if (!existingAdmin) {
+          this.databaseService.upsertUserByEmail({
+            email: adminEmail,
+            password: adminPassword,
+            role: 'admin',
+            status: 'active',
+          });
+          this.logger.log(`[INIT] ✅ Admin user created: ${adminEmail}`);
+        } else {
+          this.logger.log(`[INIT] ⏭️  Admin user already exists: ${adminEmail}`);
+        }
+      } else {
+        this.logger.warn('[INIT] ⚠️  CMS_TEST_ADMIN_EMAIL or CMS_TEST_ADMIN_PASSWORD not set, skipping admin user creation');
+      }
+
+      // 크리에이터 계정 확인 및 생성
+      const creatorEmail = this.configService.get<string>('CMS_TEST_CREATOR_EMAIL');
+      const creatorPassword = this.configService.get<string>('CMS_TEST_CREATOR_PASSWORD');
+
+      if (creatorEmail && creatorPassword) {
+        const existingCreator = this.databaseService.findUserByEmail(creatorEmail);
+        if (!existingCreator) {
+          this.databaseService.upsertUserByEmail({
+            email: creatorEmail,
+            password: creatorPassword,
+            role: 'creator',
+            status: 'active',
+          });
+          this.logger.log(`[INIT] ✅ Creator user created: ${creatorEmail}`);
+        } else {
+          this.logger.log(`[INIT] ⏭️  Creator user already exists: ${creatorEmail}`);
+        }
+      } else {
+        this.logger.warn('[INIT] ⚠️  CMS_TEST_CREATOR_EMAIL or CMS_TEST_CREATOR_PASSWORD not set, skipping creator user creation');
+      }
+
+      this.logger.log('[INIT] Initial users check completed');
+    } catch (error: any) {
+      this.logger.error(`[INIT] ❌ Failed to ensure initial users: ${this.stringifyErrorOneLine(error)}`);
+      // 초기화 실패해도 서버는 계속 실행되도록 함
+    }
+  }
+
+  /**
    * 로그인
    * - identifier: username/email 둘 다 허용 (현재는 email 위주)
    */
 
 async seedRun() {
-  // 운영에서 보호: CMS_DEBUG=true일 때만
-  if (process.env.NODE_ENV === 'production' && process.env.CMS_DEBUG !== 'true') {
-    throw new ForbiddenException('CMS_DEBUG=true일 때만 사용 가능합니다.');
-  }
-
   const adminId = process.env.CMS_TEST_ADMIN_EMAIL || 'consulting_manager@naver.com';
   const adminPw = process.env.CMS_TEST_ADMIN_PASSWORD || '123456789';
 
@@ -107,7 +172,7 @@ async seedRun() {
       );
 
       if (!ok) {
-        this.logger.warn(`[LOGIN] bad password: ${identifier}`);
+        this.logger.warn(`[LOGIN] password mismatch: ${identifier}`);
         throw new UnauthorizedException('아이디 또는 비밀번호가 올바르지 않습니다.');
       }
 
@@ -118,6 +183,8 @@ async seedRun() {
         site_id: user.siteId ?? user.site_id ?? null,
         username: user.username ?? user.name ?? user.email,
       });
+
+      this.logger.log(`[LOGIN] success: ${identifier}, role=${user.role}`);
 
       return {
         success: true,

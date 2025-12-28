@@ -103,7 +103,13 @@ export class CreatorVideosController {
   @ApiResponse({ status: 403, description: 'Creator 역할이 아님' })
   async getCreatorVideos(@Request() req: any, @Query('site_id') siteId?: string) {
     const user = req.user;
-    const targetSiteId = siteId || user.site_id;
+
+    // req.user가 없거나 필수 필드가 없으면 Unauthorized
+    if (!user || !user.id) {
+      throw new ForbiddenException('User information is missing');
+    }
+
+    const targetSiteId = siteId || user.site_id || null;
 
     // Creator는 자신의 site_id만 접근 가능
     if (user.role === 'creator' && targetSiteId !== user.site_id) {

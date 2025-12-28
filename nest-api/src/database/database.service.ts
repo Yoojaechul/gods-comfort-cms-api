@@ -13,55 +13,28 @@ import { createHash, timingSafeEqual, randomUUID, randomBytes } from 'crypto';
 @Injectable()
 export class DatabaseService implements OnModuleInit {
   private readonly logger = new Logger(DatabaseService.name);
-
-
-// 예: database.service.ts 안
-private ensureMigrations(db: any) {
-  // videos.site_id 없으면 추가
-  const cols = db.prepare(`PRAGMA table_info(videos)`).all();
-  const hasSiteId = cols.some((c: any) => c.name === "site_id");
-  if (!hasSiteId) {
-    db.prepare(`ALTER TABLE videos ADD COLUMN site_id TEXT`).run();
-  }
-}
-
-  /**
-   * NOTE:
-   * better-sqlite3 Database 타입을 외부로 직접 노출하면 빌드 환경에서 TS4053 문제가 날 수 있어 any 사용
-   */
   private db: any;
+  private readonly configService: ConfigService;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(configService: ConfigService) {
+    this.configService = configService;
+  }
 
-  onModuleInit() {
-    const dbPath =
-      this.configService.get<string>('SQLITE_DB_PATH') ||
-      this.configService.get<string>('DB_PATH') ||
-      '/mnt/cmsdata/cms.db';
+  async onModuleInit() {
+    const dbPath = this.configService.get<string>('DATABASE_PATH') || path.join(process.cwd(), 'data', 'database.db');
+    const dbDir = path.dirname(dbPath);
 
-    this.logger.log(`Using SQLite DB Path: ${dbPath}`);
-
-    try {
-      const dbDir = path.dirname(dbPath);
-      if (!fs.existsSync(dbDir)) {
-        fs.mkdirSync(dbDir, { recursive: true });
-        this.logger.log(`[DB] 디렉터리 생성: ${dbDir}`);
-      }
-
-      this.db = new Database(dbPath);
-      this.db.pragma('journal_mode = WAL');
-      this.db.pragma('foreign_keys = ON');
-
-      this.logger.log('[DB] ✅ SQLite 데이터베이스 연결 성공');
-
-      this.ensureSchema();
-this.ensureMigrations(this.db); 
-      this.logTables();
-      this.logUsersTableSchema();
-    } catch (error) {
-      this.logger.error('❌ DB 초기화 실패:', error);
-      throw error;
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
     }
+
+    this.db = new Database(dbPath);
+    this.logger.log(`📦 Database initialized at: ${dbPath}`);
+
+    this.ensureSchema();
+    this.ensureMigrations();
+    this.logTables();
+    this.logUsersTableSchema();
   }
 
   /**
@@ -99,27 +72,8 @@ this.ensureMigrations(this.db);
       );
     `);
 
-    // videos
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS videos (
-        id TEXT PRIMARY KEY,
-        management_id TEXT,
-        platform TEXT,
-        language TEXT,
-        title TEXT,
-        description TEXT,
-        url TEXT,
-        thumbnail_url TEXT,
-        views INTEGER DEFAULT 0,
-        likes INTEGER DEFAULT 0,
-        batch_id TEXT,
-        batch_order INTEGER,
-        batch_total INTEGER,
-        created_by TEXT,
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
-      );
-    `);
+    // videos 테이블은 ensureVideosTable에서 처리
+    this.ensureVideosTable();
 
     // sites (Seed가 domain 컬럼을 기대함)
     this.db.exec(`
@@ -145,17 +99,139 @@ this.ensureMigrations(this.db);
       this.logger.warn('⚠️ sites.domain migration check failed:', e);
     }
 
-    // indexes
+    // indexes (videos 인덱스는 ensureVideosTable에서 처리)
     this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_videos_management_id ON videos(management_id);
-      CREATE INDEX IF NOT EXISTS idx_videos_batch_id ON videos(batch_id);
-      CREATE INDEX IF NOT EXISTS idx_videos_created_by ON videos(created_by);
-
       CREATE INDEX IF NOT EXISTS idx_sites_slug ON sites(slug);
       CREATE INDEX IF NOT EXISTS idx_sites_domain ON sites(domain);
     `);
 
     this.logger.log('✅ Schema ensured');
+  }
+
+  /**
+   * videos 테이블 자동 생성 및 마이그레이션
+   * - 테이블이 없으면 생성
+   * - 필요한 컬럼이 없으면 추가 (ALTER TABLE ADD COLUMN)
+   */
+  private ensureVideosTable() {
+    try {
+      this.logger.log('[DB] Ensuring videos table...');
+
+      // 1. 테이블이 없으면 생성
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS videos (
+          id TEXT PRIMARY KEY,
+          management_id TEXT,
+          creator_id TEXT,
+          owner_id TEXT,
+          site_id TEXT,
+          platform TEXT,
+          video_id TEXT,
+          source_url TEXT,
+          youtube_url TEXT,
+          url TEXT,
+          title TEXT,
+          thumbnail_url TEXT,
+          embed_url TEXT,
+          language TEXT,
+          status TEXT,
+          visibility TEXT,
+          description TEXT,
+          views INTEGER DEFAULT 0,
+          views_count INTEGER DEFAULT 0,
+          likes INTEGER DEFAULT 0,
+          likes_count INTEGER DEFAULT 0,
+          shares_count INTEGER DEFAULT 0,
+          batch_id TEXT,
+          batch_order INTEGER,
+          batch_total INTEGER,
+          created_by TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        );
+      `);
+
+      // 2. 기존 테이블에 필요한 컬럼들이 있는지 확인하고 없으면 추가
+      const cols = this.db
+        .prepare(`PRAGMA table_info(videos)`)
+        .all() as Array<{ name: string }>;
+      const columnNames = cols.map((c) => c.name);
+
+      // 필요한 컬럼 목록 (존재하지 않으면 추가)
+      const requiredColumns = [
+        { name: 'management_id', type: 'TEXT' },
+        { name: 'creator_id', type: 'TEXT' },
+        { name: 'owner_id', type: 'TEXT' },
+        { name: 'site_id', type: 'TEXT' },
+        { name: 'platform', type: 'TEXT' },
+        { name: 'video_id', type: 'TEXT' },
+        { name: 'source_url', type: 'TEXT' },
+        { name: 'youtube_url', type: 'TEXT' },
+        { name: 'title', type: 'TEXT' },
+        { name: 'thumbnail_url', type: 'TEXT' },
+        { name: 'embed_url', type: 'TEXT' },
+        { name: 'language', type: 'TEXT' },
+        { name: 'status', type: 'TEXT' },
+        { name: 'visibility', type: 'TEXT' },
+        { name: 'views_count', type: 'INTEGER DEFAULT 0' },
+        { name: 'likes_count', type: 'INTEGER DEFAULT 0' },
+        { name: 'shares_count', type: 'INTEGER DEFAULT 0' },
+      ];
+
+      for (const col of requiredColumns) {
+        if (!columnNames.includes(col.name)) {
+          try {
+            this.db.exec(`ALTER TABLE videos ADD COLUMN ${col.name} ${col.type};`);
+            this.logger.log(`✅ Migrated: videos.${col.name} column added`);
+          } catch (err: any) {
+            // 이미 존재하거나 다른 이유로 실패할 수 있음 (무시)
+            this.logger.warn(
+              `⚠️ Failed to add videos.${col.name}: ${err.message}`,
+            );
+          }
+        }
+      }
+
+      // 3. 인덱스 생성
+      const indexes = [
+        'CREATE INDEX IF NOT EXISTS idx_videos_management_id ON videos(management_id)',
+        'CREATE INDEX IF NOT EXISTS idx_videos_site_id ON videos(site_id)',
+        'CREATE INDEX IF NOT EXISTS idx_videos_owner_id ON videos(owner_id)',
+        'CREATE INDEX IF NOT EXISTS idx_videos_creator_id ON videos(creator_id)',
+        'CREATE INDEX IF NOT EXISTS idx_videos_platform ON videos(platform)',
+        'CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status)',
+        'CREATE INDEX IF NOT EXISTS idx_videos_visibility ON videos(visibility)',
+        'CREATE INDEX IF NOT EXISTS idx_videos_batch_id ON videos(batch_id)',
+        'CREATE INDEX IF NOT EXISTS idx_videos_created_by ON videos(created_by)',
+      ];
+
+      for (const indexSql of indexes) {
+        try {
+          this.db.exec(indexSql);
+        } catch (err: any) {
+          this.logger.warn(`⚠️ Failed to create index: ${err.message}`);
+        }
+      }
+
+      this.logger.log('[DB] ✅ videos table ensured');
+    } catch (e) {
+      this.logger.error('[DB] ❌ ensureVideosTable failed', e);
+      throw e;
+    }
+  }
+
+  /**
+   * 마이그레이션: 기존 마이그레이션 로직 (videos는 ensureVideosTable에서 처리)
+   */
+  private ensureMigrations() {
+    try {
+      this.logger.log('[DB] ensureMigrations start');
+      // videos 테이블은 ensureVideosTable에서 처리되므로 여기서는 다른 마이그레이션만 처리
+      this.logger.log('[DB] ensureMigrations done');
+    } catch (e) {
+      this.logger.error('[DB] ❌ ensureMigrations failed', e);
+      throw e;
+    }
   }
 
   private logTables() {

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Logger } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Logger, ForbiddenException } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { DebugService } from './debug.service';
 import { ConfigService } from '@nestjs/config';
@@ -73,6 +73,31 @@ export class DebugController {
     this.logger.log(`[DEBUG] Login check requested for: ${body.email.substring(0, 3)}***, password length: ${body.password.length}`);
 
     return this.debugService.checkLogin(body.email, body.password);
+  }
+
+  /**
+   * 테이블 스키마 조회
+   * - users, videos 테이블의 스키마 정보를 PRAGMA table_info()로 조회
+   * - CMS_DEBUG=true일 때만 접근 가능
+   */
+  @Get('schema')
+  @ApiOperation({ summary: '테이블 스키마 조회 (디버그용)' })
+  @ApiResponse({ status: 200, description: '테이블 스키마 정보 반환' })
+  @ApiResponse({ status: 403, description: 'CMS_DEBUG가 true가 아닐 때' })
+  async getSchema() {
+    // CMS_DEBUG 체크
+    const cmsDebug = this.configService.get<string>('CMS_DEBUG') === 'true';
+    if (!cmsDebug) {
+      throw new ForbiddenException('이 엔드포인트는 CMS_DEBUG=true일 때만 사용 가능합니다.');
+    }
+
+    const usersSchema = await this.debugService.getTableSchema('users');
+    const videosSchema = await this.debugService.getTableSchema('videos');
+
+    return {
+      users: usersSchema,
+      videos: videosSchema,
+    };
   }
 }
 
