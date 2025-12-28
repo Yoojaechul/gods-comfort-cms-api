@@ -38,7 +38,7 @@ private ensureMigrations(db: any) {
       this.configService.get<string>('SQLITE_DB_PATH') ||
       this.configService.get<string>('DB_PATH') ||
       '/mnt/cmsdata/cms.db';
-this.ensureMigrations(this.db);
+
     this.logger.log(`Using SQLite DB Path: ${dbPath}`);
 
     try {
@@ -55,6 +55,7 @@ this.ensureMigrations(this.db);
       this.logger.log('[DB] ✅ SQLite 데이터베이스 연결 성공');
 
       this.ensureSchema();
+      this.ensureMigrations(this.db);
       this.logTables();
       this.logUsersTableSchema();
     } catch (error) {
