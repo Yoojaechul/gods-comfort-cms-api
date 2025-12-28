@@ -25,3 +25,5 @@ RUN mkdir -p /app/data
 
 EXPOSE 8080
 CMD ["node", "dist/main.js"]
+
+

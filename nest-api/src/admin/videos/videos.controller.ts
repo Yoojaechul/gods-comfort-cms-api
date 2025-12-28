@@ -1,3 +1,4 @@
+// src/admin/videos/videos.controller.ts
 import {
   Controller,
   Post,
@@ -8,6 +9,8 @@ import {
   BadRequestException,
   NotFoundException,
   InternalServerErrorException,
+  Delete,
+  HttpCode,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -23,6 +26,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { UploadsService } from '../../uploads/uploads.service';
 import { DatabaseService } from '../../database/database.service';
 import * as path from 'path';
+import * as fs from 'fs';
 
 @ApiTags('admin/videos')
 @Controller('admin/videos')
@@ -35,8 +39,8 @@ export class AdminVideosController {
   ) {}
 
   /**
-   * 영상 썸네일 업로드 및 업데이트
-   * multipart/form-data로 파일을 받아서 서버에 저장하고 DB의 thumbnail_url 업데이트
+   * 영상 썸네일 업로드/업데이트
+   * multipart/form-data로 파일을 받아 서버에 저장하고 DB의 thumbnail_url 업데이트
    */
   @Post(':id/thumbnail')
   @UseInterceptors(FileInterceptor('file'))
@@ -60,9 +64,9 @@ export class AdminVideosController {
     },
   })
   @ApiOperation({
-    summary: '영상 썸네일 업로드 및 업데이트',
+    summary: '영상 썸네일 업로드/업데이트',
     description:
-      'multipart/form-data로 썸네일 이미지 파일을 업로드하고, 해당 영상의 thumbnail_url을 업데이트합니다. 인증이 필요합니다 (JWT Bearer Token).',
+      'multipart/form-data로 썸네일 이미지 파일을 업로드하고 해당 영상의 thumbnail_url을 업데이트합니다. 인증 필요(JWT Bearer Token).',
   })
   @ApiResponse({
     status: 200,
@@ -72,14 +76,14 @@ export class AdminVideosController {
       properties: {
         thumbnailUrl: {
           type: 'string',
-          example: 'https://example.com/uploads/thumbnails/1234567890_abc123.jpg',
-          description: '업로드된 썸네일 이미지의 전체 URL',
+          example: '/uploads/thumbnails/1234567890_abc123.jpg',
+          description: '업로드된 썸네일 이미지의 URL(상대경로)',
         },
       },
       required: ['thumbnailUrl'],
     },
     example: {
-      thumbnailUrl: 'https://example.com/uploads/thumbnails/1234567890_abc123.jpg',
+      thumbnailUrl: '/uploads/thumbnails/1234567890_abc123.jpg',
     },
   })
   @ApiResponse({
@@ -106,7 +110,7 @@ export class AdminVideosController {
       throw new BadRequestException('No file uploaded');
     }
 
-    // 파일 확장자 검증 (이미지만 허용)
+    // 파일 확장자 검증(이미지만 허용)
     const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
     const fileExtension = path.extname(file.originalname).toLowerCase();
 
@@ -147,5 +151,67 @@ export class AdminVideosController {
       throw new InternalServerErrorException('Failed to upload thumbnail');
     }
   }
-}
 
+  /**
+   * ✅ 관리자 영상 삭제
+   * - DELETE /admin/videos/:id
+   * - 성공 시 204 No Content
+   * - videos 테이블 row 삭제
+   * - thumbnail_url이 /uploads/thumbnails/... 이면 /tmp/uploads/thumbnails 파일도 삭제 시도
+   */
+  @Delete(':id')
+  @HttpCode(204)
+  @ApiParam({
+    name: 'id',
+    description: '영상 ID',
+    type: String,
+  })
+  @ApiOperation({
+    summary: '관리자 영상 삭제',
+    description:
+      '해당 영상 ID를 DB에서 삭제합니다. 썸네일이 로컬(/uploads/thumbnails/...)이면 파일도 삭제 시도합니다. 인증 필요(JWT).',
+  })
+  @ApiResponse({ status: 204, description: '삭제 성공 (No Content)' })
+  @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
+  @ApiResponse({ status: 404, description: '영상을 찾을 수 없음' })
+  async deleteVideo(@Param('id') id: string): Promise<void> {
+    const db = this.databaseService.getDb();
+
+    // 1) 영상 존재 확인 + 썸네일 경로 확보
+    const video = db
+      .prepare('SELECT id, thumbnail_url FROM videos WHERE id = ?')
+      .get(id) as any;
+
+    if (!video) {
+      throw new NotFoundException({
+        message: '영상을 찾을 수 없습니다.',
+        error: 'Not Found',
+      });
+    }
+
+    // 2) DB 삭제
+    db.prepare('DELETE FROM videos WHERE id = ?').run(id);
+
+    // 3) 로컬 썸네일 파일 삭제 시도 (실패해도 무시)
+    try {
+      const thumb: string | null = video.thumbnail_url ?? null;
+
+      // 상대경로 /uploads/thumbnails/xxx.png 형태만 파일삭제 대상으로 처리
+      if (thumb && typeof thumb === 'string' && thumb.startsWith('/uploads/thumbnails/')) {
+        const filename = thumb.split('/').pop();
+        if (filename) {
+          // Cloud Run 저장 경로(/tmp/uploads/thumbnails)
+          const filePath = path.join('/tmp', 'uploads', 'thumbnails', filename);
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[DELETE /admin/videos/:id] thumbnail file delete skipped:', e);
+    }
+
+    // 204 No Content
+    return;
+  }
+}

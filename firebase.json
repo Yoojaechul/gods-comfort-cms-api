@@ -16,17 +16,11 @@
     "rewrites": [
       {
         "source": "/auth/**",
-        "run": {
-          "serviceId": "api",
-          "region": "us-central1"
-        }
+        "run": { "serviceId": "cms-api", "region": "asia-northeast3" }
       },
       {
         "source": "/creator/videos",
-        "run": {
-          "serviceId": "api",
-          "region": "us-central1"
-        }
+        "run": { "serviceId": "cms-api", "region": "asia-northeast3" }
       },
       {
         "source": "**",

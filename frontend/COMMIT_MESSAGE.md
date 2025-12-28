@@ -46,3 +46,5 @@ style: Make VideoTable more compact with centered title column and improved spac
 - ✅ CSS 파일 포함 확인 (25.26 kB)
 
 
+
+

@@ -4,7 +4,7 @@ import { normalizeThumbnailUrl } from "../utils/videoMetadata";
 import { getRealPlaybackCount } from "../utils/videoMetrics";
 import { extractYoutubeId } from "../utils/videoMetadata";
 import { mapLanguageToEnglish } from "../utils/languageMapper";
-import { apiDelete, apiPut } from "../lib/apiClient";
+import { apiDelete } from "../lib/apiClient";
 import "./VideoTable.css";
 
 interface Video {
@@ -36,6 +36,85 @@ interface VideoTableProps {
   isAdmin: boolean;
   token: string;
   onRefresh: () => void;
+}
+
+/**
+ * ✅ YouTube 전용: 새 창을 about:blank로 열고, 그 안에 iframe을 주입해서 "영상만" 재생되게 합니다.
+ * - (중요) embed URL을 새 창의 location으로 직접 열면 YouTube 오류 153이 뜰 수 있음
+ * - 이 방식은 embed가 "iframe 내부"에서 로드되므로 안정적으로 재생됩니다.
+ */
+function openYouTubePlayerPopup(youtubeId: string, title?: string) {
+  const width = 980;
+  const height = 580;
+
+  // (중요) noopener/noreferrer를 넣으면 popup.document 접근이 막힐 수 있어 제거합니다.
+  const popup = window.open(
+    "about:blank",
+    "_blank",
+    `width=${width},height=${height},resizable=yes,scrollbars=no`
+  );
+
+  if (!popup) {
+    alert("팝업이 차단되었습니다. 브라우저에서 팝업 허용 후 다시 시도해 주세요.");
+    return;
+  }
+
+  // YouTube embed (iframe 내부 재생)
+  const origin = encodeURIComponent(window.location.origin);
+  const embedUrl =
+    `https://www.youtube.com/embed/${youtubeId}` +
+    `?autoplay=1&mute=1&rel=0&modestbranding=1&playsinline=1&origin=${origin}`;
+
+  const safeTitle = (title || `YouTube Preview - ${youtubeId}`).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const html = `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${safeTitle}</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+    .wrap {
+      width: 100%; height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+    }
+    iframe {
+      border: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <iframe
+      src="${embedUrl}"
+      allow="autoplay; encrypted-media; picture-in-picture"
+      allowfullscreen
+    ></iframe>
+  </div>
+</body>
+</html>`;
+
+  try {
+    popup.document.open();
+    popup.document.write(html);
+    popup.document.close();
+  } catch (e) {
+    console.error("[YouTube Popup] Failed to write popup HTML:", e);
+    // fallback: 그래도 새 창에서 YouTube watch로 열기
+    popup.location.href = `https://www.youtube.com/watch?v=${youtubeId}`;
+  }
 }
 
 export default function VideoTable({
@@ -92,7 +171,7 @@ export default function VideoTable({
         return value;
       }
     }
-    
+
     // 우선순위 2: managementId
     const managementId = (video as any).managementId;
     if (managementId !== null && managementId !== undefined && managementId !== "") {
@@ -101,16 +180,16 @@ export default function VideoTable({
         return value;
       }
     }
-    
+
     // 둘 다 없으면 '-' 표시
     return "-";
   };
 
   // 썸네일 URL 가져오기
   const getThumbnailUrl = (video: Video): string | null => {
-    const rawThumbnailUrl = 
-      (video as any).thumbnailUrl || 
-      (video as any).thumbnail_url || 
+    const rawThumbnailUrl =
+      (video as any).thumbnailUrl ||
+      (video as any).thumbnail_url ||
       (video as any).thumbnail ||
       (video as any).thumbnailPath ||
       (video as any).thumbnail_path ||
@@ -119,20 +198,20 @@ export default function VideoTable({
       (video as any).thumbnailImage ||
       (video as any).thumbnail_image ||
       null;
-    
+
     const normalizedThumbnailUrl = normalizeThumbnailUrl(rawThumbnailUrl);
-    
+
     if (normalizedThumbnailUrl) {
       return normalizedThumbnailUrl;
     }
-    
+
     // YouTube인 경우 기본 썸네일 생성
     if ((video.video_type === "youtube" || (video as any).sourceType === "youtube") && video.youtube_id) {
       return `https://img.youtube.com/vi/${video.youtube_id}/hqdefault.jpg`;
     }
-    
+
     // YouTube sourceUrl에서 추출
-    if ((video.video_type === "youtube" || (video as any).sourceType === "youtube")) {
+    if (video.video_type === "youtube" || (video as any).sourceType === "youtube") {
       const sourceUrl = video.sourceUrl || (video as any).source_url;
       if (sourceUrl) {
         const youtubeId = extractYoutubeId(sourceUrl);
@@ -141,7 +220,7 @@ export default function VideoTable({
         }
       }
     }
-    
+
     return null;
   };
 
@@ -151,11 +230,11 @@ export default function VideoTable({
     if (video.title && String(video.title).trim() !== "") {
       return video.title;
     }
-    
+
     // platform과 video_id 조합
     const platform = video.video_type || (video as any).sourceType || (video as any).platform || "";
     let videoId = video.youtube_id || (video as any).video_id || "";
-    
+
     // video_id가 없으면 source_url에서 추출 시도 (YouTube만)
     if (!videoId) {
       const sourceUrl = video.sourceUrl || (video as any).source_url;
@@ -166,63 +245,63 @@ export default function VideoTable({
         }
       }
     }
-    
+
     // [PLATFORM] video_id 형태로 반환
     if (platform && videoId) {
       return `[${platform.toUpperCase()}] ${videoId}`.trim();
     }
-    
+
     if (platform) {
       return `[${platform.toUpperCase()}]`;
     }
-    
+
     return "제목 없음";
-  };
-
-  // 미리보기 URL 가져오기 (embed_url 또는 source_url 기반으로 생성)
-  const getPreviewUrl = (video: Video): string | null => {
-    // embed_url이 있으면 사용
-    const embedUrl = (video as any).embed_url || (video as any).embedUrl;
-    if (embedUrl && String(embedUrl).trim() !== "") {
-      return embedUrl;
-    }
-    
-    // YouTube인 경우 embed URL 생성
-    if (video.video_type === "youtube" || (video as any).sourceType === "youtube") {
-      const youtubeId = video.youtube_id || extractYoutubeId(video.sourceUrl || (video as any).source_url || "");
-      if (youtubeId) {
-        return `https://www.youtube.com/embed/${youtubeId}`;
-      }
-    }
-    
-    // source_url 사용 (Facebook 등)
-    const sourceUrl = video.sourceUrl || (video as any).source_url;
-    if (sourceUrl && String(sourceUrl).trim() !== "") {
-      return sourceUrl;
-    }
-    
-    return null;
-  };
-
-  // 미리보기 버튼 클릭 핸들러 (새 팝업 창)
-  const handlePreviewClick = (video: Video) => {
-    const previewUrl = getPreviewUrl(video);
-    if (previewUrl) {
-      window.open(
-        previewUrl,
-        "_blank",
-        "width=980,height=580,noopener,noreferrer"
-      );
-    }
   };
 
   // 조회수 가져오기
   const getViewsCount = (video: Video): number => {
-    return (video as any).views_count || 
-           video.views_actual || 
-           video.views_display || 
-           getRealPlaybackCount(video) || 
-           0;
+    return (
+      (video as any).views_count ||
+      video.views_actual ||
+      video.views_display ||
+      getRealPlaybackCount(video) ||
+      0
+    );
+  };
+
+  /**
+   * ✅ 미리보기 버튼 클릭 핸들러
+   * - YouTube: "영상만" 나오는 팝업(about:blank + iframe 주입)으로 재생
+   * - Facebook/기타: 기존처럼 URL 새 창으로 오픈
+   */
+  const handlePreviewClick = (video: Video) => {
+    const platform = video.video_type || (video as any).sourceType || (video as any).platform || "";
+    const title = getTitle(video);
+
+    // ✅ YouTube는 popup에 iframe로 재생
+    if (platform === "youtube") {
+      const youtubeId =
+        video.youtube_id ||
+        extractYoutubeId(video.sourceUrl || (video as any).source_url || "") ||
+        "";
+
+      if (!youtubeId) {
+        alert("YouTube ID를 찾을 수 없습니다. source_url/youtube_id를 확인해 주세요.");
+        return;
+      }
+
+      openYouTubePlayerPopup(youtubeId, title);
+      return;
+    }
+
+    // ✅ Facebook/기타는 URL 그대로 새 창
+    const sourceUrl = video.sourceUrl || (video as any).source_url || (video as any).facebook_url || "";
+    if (sourceUrl && String(sourceUrl).trim() !== "") {
+      window.open(sourceUrl, "_blank", "width=980,height=580,noopener,noreferrer");
+      return;
+    }
+
+    alert("미리보기 URL을 찾을 수 없습니다.");
   };
 
   // 삭제 핸들러
@@ -283,11 +362,10 @@ export default function VideoTable({
                 const title = getTitle(video);
                 const managementNo = getManagementNo(video);
                 const viewsCount = getViewsCount(video);
-                const previewUrl = getPreviewUrl(video);
                 const language = mapLanguageToEnglish(video.language);
                 const platform = video.video_type || (video as any).sourceType || (video as any).platform || "-";
                 const isDeleting = deletingVideoId === video.id;
-                
+
                 return (
                   <tr key={video.id}>
                     <td className="video-table-checkbox-cell">
@@ -298,9 +376,7 @@ export default function VideoTable({
                         className="rounded border-gray-300"
                       />
                     </td>
-                    <td className="video-table-management-no-cell">
-                      {managementNo}
-                    </td>
+                    <td className="video-table-management-no-cell">{managementNo}</td>
                     <td className="video-table-thumbnail-cell">
                       <div className="video-table-thumbnail-wrapper">
                         {thumbnailUrl ? (
@@ -311,14 +387,15 @@ export default function VideoTable({
                             onError={(e) => {
                               const target = e.target as HTMLImageElement;
                               target.style.display = "none";
-                              const placeholder = target.parentElement?.querySelector(".video-table-thumbnail-placeholder");
+                              const placeholder =
+                                target.parentElement?.querySelector(".video-table-thumbnail-placeholder");
                               if (placeholder) {
                                 (placeholder as HTMLElement).style.display = "flex";
                               }
                             }}
                           />
                         ) : null}
-                        <div 
+                        <div
                           className="video-table-thumbnail-placeholder"
                           style={{ display: thumbnailUrl ? "none" : "flex" }}
                         >
@@ -327,32 +404,24 @@ export default function VideoTable({
                       </div>
                     </td>
                     <td className="video-table-title-cell">
-                      <p className="video-table-title-text" title={title} style={{ textAlign: 'center' }}>
+                      <p className="video-table-title-text" title={title} style={{ textAlign: "center" }}>
                         {title}
                       </p>
                     </td>
-                    <td className="video-table-language-cell">
-                      {language}
-                    </td>
-                    <td className="video-table-platform-cell">
-                      {platform}
-                    </td>
-                    <td className="video-table-views-cell">
-                      {viewsCount.toLocaleString()}
-                    </td>
+                    <td className="video-table-language-cell">{language}</td>
+                    <td className="video-table-platform-cell">{platform}</td>
+                    <td className="video-table-views-cell">{viewsCount.toLocaleString()}</td>
+
                     <td className="video-table-preview-cell">
-                      {previewUrl ? (
-                        <button
-                          className="video-table-action-button video-table-preview-button"
-                          onClick={() => handlePreviewClick(video)}
-                          title="새 창에서 미리보기"
-                        >
-                          미리보기
-                        </button>
-                      ) : (
-                        <span className="text-gray-400 text-sm">-</span>
-                      )}
+                      <button
+                        className="video-table-action-button video-table-preview-button"
+                        onClick={() => handlePreviewClick(video)}
+                        title="새 창에서 미리보기"
+                      >
+                        미리보기
+                      </button>
                     </td>
+
                     <td className="video-table-action-cell">
                       <button
                         className="video-table-action-button video-table-edit-button"

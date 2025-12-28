@@ -1,496 +1,262 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import { createPortal } from "react-dom";
-import { loadFacebookSDK, parseXFBML } from "../utils/facebookSdk";
+import React, { useEffect, useMemo } from "react";
 
-interface Video {
-  id: string | number;
-  title: string;
-  video_type: "youtube" | "facebook" | "file";
-  youtube_id?: string;
-  facebook_url?: string;
-  sourceUrl?: string;
-  sourceType?: string;
-}
+type VideoPlatform = "youtube" | "facebook" | "unknown";
 
-interface VideoPreviewModalProps {
-  video: Video;
+export type VideoPreviewModalProps = {
+  isOpen: boolean;
   onClose: () => void;
+
+  // 영상 정보 (프로젝트에서 내려주는 형태를 최대한 허용)
+  url?: string; // 유튜브/페이스북 원본 URL
+  youtubeId?: string; // 유튜브 ID가 따로 있을 수도 있음
+  platform?: string; // "youtube" | "facebook" | etc...
+  title?: string;
+};
+
+function isFacebookUrl(u?: string) {
+  if (!u) return false;
+  return /facebook\.com|fb\.watch/i.test(u);
 }
 
-export default function VideoPreviewModal({
-  video,
-  onClose,
-}: VideoPreviewModalProps) {
-  const facebookContainerRef = useRef<HTMLDivElement>(null);
-  const facebookIframeRef = useRef<HTMLIFrameElement>(null);
-  const [facebookUrl, setFacebookUrl] = useState<string | null>(null);
-  const [isFacebookLoading, setIsFacebookLoading] = useState(false);
-  const [facebookLoadError, setFacebookLoadError] = useState<string | null>(null);
-  const [useXFBML, setUseXFBML] = useState(false); // iframe 실패 시 XFBML 사용
+function extractYouTubeId(input?: string): string | null {
+  if (!input) return null;
 
-  // YouTube Video ID 추출 함수
-  const extractYouTubeId = (url: string): string | null => {
-    if (!url) return null;
-    
-    // 이미 ID만 있는 경우
-    if (!url.includes("http") && !url.includes("www")) {
-      return url;
+  // 이미 ID만 들어온 경우(대부분 11자)
+  if (/^[a-zA-Z0-9_-]{11}$/.test(input)) return input;
+
+  // URL 형태 처리
+  try {
+    const u = new URL(input);
+
+    // youtu.be/ID
+    if (u.hostname.includes("youtu.be")) {
+      const id = u.pathname.replace("/", "");
+      if (/^[a-zA-Z0-9_-]{11}$/.test(id)) return id;
     }
-    
+
     // youtube.com/watch?v=ID
-    const watchMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/);
-    if (watchMatch) {
-      return watchMatch[1];
-    }
-    
+    const v = u.searchParams.get("v");
+    if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+
     // youtube.com/embed/ID
-    const embedMatch = url.match(/youtube\.com\/embed\/([^&\n?#]+)/);
-    if (embedMatch) {
-      return embedMatch[1];
-    }
-    
+    const m1 = u.pathname.match(/\/embed\/([a-zA-Z0-9_-]{11})/);
+    if (m1?.[1]) return m1[1];
+
+    // youtube.com/shorts/ID
+    const m2 = u.pathname.match(/\/shorts\/([a-zA-Z0-9_-]{11})/);
+    if (m2?.[1]) return m2[1];
+
     return null;
-  };
+  } catch {
+    // URL이 아니면 정규식으로 한 번 더 시도
+    const m = input.match(/([a-zA-Z0-9_-]{11})/);
+    return m?.[1] ?? null;
+  }
+}
 
-  // Facebook URL 정규화 (watch/reels/video.php 모두 처리)
-  const normalizeFacebookUrl = (url: string): string => {
-    if (!url || !url.trim()) return url;
-    
-    const trimmed = url.trim();
-    
-    // 이미 http:// 또는 https://로 시작하면 그대로 사용
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-      return trimmed;
-    }
-    
-    // facebook.com 또는 fb.watch로 시작하면 https:// 추가
-    if (trimmed.startsWith("facebook.com/") || trimmed.startsWith("www.facebook.com/") || trimmed.startsWith("fb.watch/")) {
-      return `https://${trimmed}`;
-    }
-    
-    // 그 외의 경우 https://를 앞에 붙임
-    return `https://${trimmed}`;
-  };
+function buildYouTubeEmbedUrl(input?: string) {
+  const videoId = extractYouTubeId(input);
+  if (!videoId) return null;
 
-  // Facebook URL 추출 (디버깅 로그 포함)
-  const getFacebookUrl = (): string | null => {
-    const isFacebook = video.video_type === "facebook" || video.sourceType === "facebook";
-    
-    if (!isFacebook) {
-      return null;
-    }
-    
-    // 디버깅: video 객체의 모든 Facebook 관련 필드 로그
-    console.log('[VideoPreviewModal] Facebook 영상 디버깅:', {
-      video_type: video.video_type,
-      sourceType: video.sourceType,
-      facebook_url: video.facebook_url,
-      sourceUrl: video.sourceUrl,
-      source_url: (video as any).source_url,
-      url: (video as any).url,
-      전체_video_객체: video,
-    });
-    
-    const rawUrl = video.facebook_url || video.sourceUrl || (video as any).source_url || (video as any).url || null;
-    
-    if (!rawUrl) {
-      console.warn('[VideoPreviewModal] Facebook URL을 찾을 수 없습니다.');
-      return null;
-    }
-    
-    // URL 정규화 (watch/reels/video.php 모두 처리)
-    const normalizedUrl = normalizeFacebookUrl(rawUrl);
-    console.log('[VideoPreviewModal] 원본 Facebook URL:', rawUrl);
-    console.log('[VideoPreviewModal] 정규화된 Facebook URL:', normalizedUrl);
-    
-    return normalizedUrl;
-  };
+  // ✅ 여기 중요: "..." 같은 문자가 들어가면 안 됩니다.
+  // autoplay=1, mute=1, playsinline=1, rel=0 정도만 깔끔하게
+  const params = new URLSearchParams({
+    autoplay: "1",
+    mute: "1",
+    playsinline: "1",
+    rel: "0",
+    modestbranding: "1",
+  });
 
-  // YouTube URL 추출
-  const getYouTubeEmbedUrl = (): string | null => {
-    if (video.video_type === "youtube" || video.sourceType === "youtube") {
-      let videoId: string | null = null;
-      
-      if (video.youtube_id) {
-        videoId = video.youtube_id;
-      } else if (video.sourceUrl || (video as any).source_url || (video as any).url) {
-        videoId = extractYouTubeId(video.sourceUrl || (video as any).source_url || (video as any).url);
-      }
-      
-      if (videoId) {
-        return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`;
-      }
-    }
-    return null;
-  };
+  // 일부 환경에서 안정성 위해 origin을 붙입니다.
+  // (window가 없는 환경 대비)
+  if (typeof window !== "undefined") {
+    params.set("origin", window.location.origin);
+  }
 
-  // File URL 추출
-  const getFileUrl = (): string | null => {
-    if (video.video_type === "file" || video.sourceType === "file") {
-      return video.sourceUrl || (video as any).source_url || (video as any).url || null;
-    }
-    return null;
-  };
+  return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
+}
 
-  const youtubeUrl = getYouTubeEmbedUrl();
-  const fileUrl = getFileUrl();
-  const currentFacebookUrl = getFacebookUrl();
+function buildFacebookEmbedUrl(originalUrl?: string) {
+  if (!originalUrl) return null;
 
-  // 모달이 열릴 때 body 스크롤 방지
+  // Facebook embed는 plugins/video.php 형태가 가장 무난합니다.
+  // (기존 정책이 더 있으면 거기에 맞춰 조정)
+  const params = new URLSearchParams({
+    href: originalUrl,
+    show_text: "0",
+    width: "960",
+  });
+
+  return `https://www.facebook.com/plugins/video.php?${params.toString()}`;
+}
+
+export default function VideoPreviewModal(props: VideoPreviewModalProps) {
+  const { isOpen, onClose, url, youtubeId, platform, title } = props;
+
+  // ESC로 닫기
   useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = "unset";
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
     };
-  }, []);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, onClose]);
 
-  // XFBML로 fallback (useEffect보다 먼저 선언하여 호이스팅 문제 해결)
-  const fallbackToXFBML = useCallback(() => {
-    console.log('[VideoPreviewModal] XFBML로 fallback');
-    setUseXFBML(true);
-    setIsFacebookLoading(true);
+  const guessedPlatform: VideoPlatform = useMemo(() => {
+    const p = (platform || "").toLowerCase();
+    if (p.includes("youtube")) return "youtube";
+    if (p.includes("facebook")) return "facebook";
+    if (isFacebookUrl(url)) return "facebook";
+    if (extractYouTubeId(youtubeId || url || "")) return "youtube";
+    return "unknown";
+  }, [platform, url, youtubeId]);
 
-    const fbUrl = currentFacebookUrl;
-    if (!fbUrl) {
-      setIsFacebookLoading(false);
-      return;
-    }
+  const youtubeEmbed = useMemo(() => buildYouTubeEmbedUrl(youtubeId || url), [youtubeId, url]);
+  const facebookEmbed = useMemo(() => buildFacebookEmbedUrl(url), [url]);
 
-    // Facebook SDK 로드 및 XFBML 파싱 (안전장치 추가)
-    loadFacebookSDK()
-      .then(() => {
-        // SDK 로드 후 window.FB 확인
-        if (!window.FB || !window.FB.XFBML) {
-          console.error('[VideoPreviewModal] Facebook SDK가 로드되었지만 window.FB.XFBML이 없습니다.');
-          setIsFacebookLoading(false);
-          setFacebookLoadError("Facebook SDK를 초기화할 수 없습니다.");
-          if (facebookContainerRef.current) {
-            facebookContainerRef.current.innerHTML = `<p style="color: #ef4444; padding: 16px;">Facebook SDK 초기화 실패</p>`;
-          }
-          return;
-        }
+  if (!isOpen) return null;
 
-        if (!facebookContainerRef.current || !fbUrl) {
-          setIsFacebookLoading(false);
-          return;
-        }
-
-        // XFBML 마크업 주입
-        const xfbmlMarkup = `
-          <div class="fb-video"
-               data-href="${fbUrl}"
-               data-width="560"
-               data-show-text="false"
-               data-autoplay="false"
-               data-allowfullscreen="true"></div>
-        `;
-        
-        facebookContainerRef.current.innerHTML = xfbmlMarkup;
-        
-        // XFBML 파싱 (안전하게)
-        try {
-          if (window.FB && window.FB.XFBML && window.FB.XFBML.parse) {
-            window.FB.XFBML.parse(facebookContainerRef.current);
-          } else {
-            console.warn('[VideoPreviewModal] window.FB.XFBML.parse를 사용할 수 없습니다.');
-            parseXFBML(facebookContainerRef.current);
-          }
-        } catch (parseError) {
-          console.error('[VideoPreviewModal] XFBML 파싱 중 오류:', parseError);
-          setFacebookLoadError("Facebook 영상 파싱에 실패했습니다.");
-        }
-        
-        setIsFacebookLoading(false);
-      })
-      .catch((error) => {
-        console.error("Facebook SDK 로드 실패:", error);
-        setIsFacebookLoading(false);
-        setFacebookLoadError("Facebook 영상을 로드할 수 없습니다.");
-        if (facebookContainerRef.current) {
-          facebookContainerRef.current.innerHTML = `<p style="color: #ef4444; padding: 16px;">Facebook 영상을 로드할 수 없습니다.</p>`;
-        }
-      });
-  }, [currentFacebookUrl]);
-
-  // Facebook 영상 처리: iframe 우선 시도, 실패 시 XFBML fallback
-  useEffect(() => {
-    const isFacebook = video.video_type === "facebook" || video.sourceType === "facebook";
-    
-    if (!isFacebook || !currentFacebookUrl) {
-      // Facebook이 아니면 컨테이너 비우기
-      if (facebookContainerRef.current) {
-        facebookContainerRef.current.innerHTML = "";
+  const renderContent = () => {
+    if (guessedPlatform === "youtube") {
+      if (!youtubeEmbed) {
+        return <div style={{ padding: 16 }}>유튜브 ID를 확인할 수 없습니다. URL/ID를 확인해주세요.</div>;
       }
-      setFacebookUrl(null);
-      setIsFacebookLoading(false);
-      setFacebookLoadError(null);
-      setUseXFBML(false);
-      return;
+
+      return (
+        <div style={{ width: "100%", height: "100%" }}>
+          <iframe
+            // 모달 열 때마다 재로딩되도록 key 부여
+            key={youtubeEmbed}
+            src={youtubeEmbed}
+            title={title || "YouTube Preview"}
+            style={{
+              width: "100%",
+              height: "100%",
+              border: 0,
+              borderRadius: 8,
+              background: "#000",
+            }}
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+            allowFullScreen
+            referrerPolicy="origin-when-cross-origin"
+          />
+          <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+            <a
+              href={extractYouTubeId(youtubeId || url || "") ? `https://www.youtube.com/watch?v=${extractYouTubeId(youtubeId || url || "")}` : (url || "#")}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "1px solid #ddd",
+                textDecoration: "none",
+                color: "#222",
+                background: "#fff",
+              }}
+            >
+              유튜브에서 열기
+            </a>
+          </div>
+        </div>
+      );
     }
 
-    // Facebook URL이 변경되었을 때만 처리
-    if (facebookUrl === currentFacebookUrl && !useXFBML) {
-      return;
-    }
-
-    // 컨테이너 비우기 및 상태 초기화
-    if (facebookContainerRef.current) {
-      facebookContainerRef.current.innerHTML = "";
-    }
-    setFacebookLoadError(null);
-    setUseXFBML(false);
-
-    setFacebookUrl(currentFacebookUrl);
-    setIsFacebookLoading(true);
-
-    // iframe 로드 실패 감지 (5초 후에도 로드되지 않으면 에러 표시)
-    const loadCheckTimer = setTimeout(() => {
-      if (!useXFBML && isFacebookLoading) {
-        console.warn('[VideoPreviewModal] iframe 로드 타임아웃 (5초)');
-        setFacebookLoadError("iframe 로드 시간 초과. 브라우저 보안 설정 또는 비공개 영상일 수 있습니다.");
-        setIsFacebookLoading(false);
+    if (guessedPlatform === "facebook") {
+      if (!facebookEmbed) {
+        return <div style={{ padding: 16 }}>페이스북 URL이 비어 있습니다.</div>;
       }
-    }, 5000);
 
-    // iframe은 직접 렌더링하므로 여기서는 상태만 설정
-    setIsFacebookLoading(false);
-
-    return () => {
-      clearTimeout(loadCheckTimer);
-    };
-  }, [video.video_type, video.sourceType, currentFacebookUrl, facebookUrl, useXFBML, fallbackToXFBML]);
-
-  // 모달이 닫힐 때 Facebook 컨테이너 비우기
-  useEffect(() => {
-    return () => {
-      if (facebookContainerRef.current) {
-        facebookContainerRef.current.innerHTML = "";
-      }
-    };
-  }, []);
-
-  // 배경 클릭 핸들러
-  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) {
-      onClose();
+      return (
+        <div style={{ width: "100%", height: "100%" }}>
+          <iframe
+            key={facebookEmbed}
+            src={facebookEmbed}
+            title={title || "Facebook Preview"}
+            style={{
+              width: "100%",
+              height: "100%",
+              border: 0,
+              borderRadius: 8,
+              background: "#000",
+            }}
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+            allowFullScreen
+            referrerPolicy="origin-when-cross-origin"
+          />
+          <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+            <a
+              href={url || "#"}
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "1px solid #ddd",
+                textDecoration: "none",
+                color: "#222",
+                background: "#fff",
+              }}
+            >
+              페이스북에서 열기
+            </a>
+          </div>
+        </div>
+      );
     }
+
+    return <div style={{ padding: 16 }}>지원하지 않는 영상 타입입니다. URL/플랫폼 값을 확인해주세요.</div>;
   };
 
-  const modalContent = (
+  return (
     <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
       style={{
         position: "fixed",
-        top: 0,
-        left: 0,
-        width: "100vw",
-        height: "100vh",
-        backgroundColor: "rgba(0, 0, 0, 0.5)",
-        zIndex: 1000,
+        inset: 0,
+        background: "rgba(0,0,0,0.65)",
+        zIndex: 9999,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "16px",
+        padding: 16,
       }}
-      onClick={handleOverlayClick}
     >
       <div
-        style={{
-          backgroundColor: "white",
-          borderRadius: "12px",
-          maxWidth: "900px",
-          width: "100%",
-          maxHeight: "90vh",
-          overflowY: "auto",
-          position: "relative",
-          boxShadow: "0 10px 40px rgba(0, 0, 0, 0.2)",
-        }}
         onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(1100px, 96vw)",
+          height: "min(720px, 82vh)",
+          background: "#fff",
+          borderRadius: 12,
+          padding: 12,
+          boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+        }}
       >
-        <div style={{ padding: "24px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-            <h2 style={{ fontSize: "20px", fontWeight: "bold", color: "#1a1a1a", margin: 0 }}>영상 미리보기</h2>
-            <button
-              onClick={onClose}
-              style={{
-                background: "none",
-                border: "none",
-                fontSize: "24px",
-                color: "#999",
-                cursor: "pointer",
-                padding: "4px",
-                lineHeight: 1,
-                transition: "color 0.2s",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#333")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#999")}
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* 영상 제목 */}
-          <div style={{ marginBottom: "16px" }}>
-            <h3 style={{ fontSize: "18px", fontWeight: "600", color: "#1a1a1a", margin: 0 }}>
-              {video.title}
-            </h3>
-          </div>
-
-          {/* 영상 플레이어 */}
-          {(() => {
-            // YouTube 처리
-            if (youtubeUrl) {
-              return (
-                <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, overflow: "hidden", borderRadius: "8px" }}>
-                  <iframe
-                    src={youtubeUrl}
-                    style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%" }}
-                    allowFullScreen
-                    allow="autoplay; encrypted-media"
-                  />
-                </div>
-              );
-            }
-
-            // Facebook 처리 (iframe 우선, 실패 시 XFBML)
-            if (currentFacebookUrl) {
-              const pluginUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(currentFacebookUrl)}&show_text=0&width=560`;
-              
-              return (
-                <div style={{ marginBottom: "16px" }}>
-                  {isFacebookLoading && (
-                    <div style={{ padding: "32px", backgroundColor: "#f3f4f6", borderRadius: "8px", textAlign: "center" }}>
-                      <p style={{ color: "#4b5563" }}>Facebook 영상을 로드하는 중...</p>
-                </div>
-              )}
-                  
-                  {!useXFBML ? (
-                    // iframe 방식 (우선 시도)
-                    <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, overflow: "hidden", borderRadius: "8px" }}>
-                      <iframe
-                        ref={facebookIframeRef}
-                        src={pluginUrl}
-                        style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }}
-                        allowFullScreen
-                        allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
-                        onLoad={() => {
-                          // iframe 로드 성공
-                          console.log('[VideoPreviewModal] Facebook iframe 로드 성공');
-                          setIsFacebookLoading(false);
-                          setFacebookLoadError(null);
-                        }}
-                        onError={() => {
-                          // iframe 로드 실패 (3rd-party 쿠키 차단 등)
-                          console.warn('[VideoPreviewModal] Facebook iframe 로드 실패 (onError)');
-                          setFacebookLoadError("iframe 로드 실패. 브라우저 보안 설정 또는 비공개 영상일 수 있습니다.");
-                          setIsFacebookLoading(false);
-                        }}
-                      />
-                      <button
-                        onClick={fallbackToXFBML}
-                        style={{
-                          position: "absolute",
-                          bottom: "8px",
-                          right: "8px",
-                          padding: "4px 8px",
-                          fontSize: "12px",
-                          backgroundColor: "rgba(0,0,0,0.6)",
-                          color: "white",
-                          border: "none",
-                          borderRadius: "4px",
-                          cursor: "pointer",
-                        }}
-                        title="iframe이 로드되지 않으면 클릭하여 XFBML 방식으로 시도"
-                      >
-                        XFBML로 시도
-                      </button>
-            </div>
-          ) : (
-                    // XFBML 방식 (fallback)
-                    <div
-                      ref={facebookContainerRef}
-                      style={{
-                        minHeight: "315px",
-                        display: "flex",
-                        justifyContent: "center",
-                        alignItems: "center",
-                      }}
-                    />
-                  )}
-                  
-                  {/* Facebook에서 열기 버튼 (항상 표시) */}
-                  <div style={{ marginTop: "12px", textAlign: "center" }}>
-                    <a
-                      href={currentFacebookUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        display: "inline-block",
-                        padding: facebookLoadError ? "10px 20px" : "6px 12px",
-                        backgroundColor: facebookLoadError ? "#1877f2" : "transparent",
-                        color: facebookLoadError ? "white" : "#1877f2",
-                        textDecoration: "none",
-                        fontSize: facebookLoadError ? "15px" : "14px",
-                        borderRadius: "4px",
-                        fontWeight: facebookLoadError ? "600" : "400",
-                        border: facebookLoadError ? "none" : "1px solid #1877f2",
-                      }}
-                    >
-                      {facebookLoadError ? "🔗 Facebook에서 열기 (권장)" : "Facebook에서 열기 →"}
-                    </a>
-                  </div>
-                  
-                  {facebookLoadError && (
-                    <div style={{ marginTop: "12px", padding: "12px", backgroundColor: "#fff3cd", borderRadius: "8px", fontSize: "13px", color: "#856404" }}>
-                      <p style={{ margin: "0 0 8px 0", fontWeight: "500" }}>⚠️ 영상 재생 불가 안내</p>
-                      <ul style={{ margin: "0", paddingLeft: "20px" }}>
-                        <li>비공개 또는 친구 공개 영상은 embed가 지원되지 않습니다.</li>
-                        <li>브라우저 보안 설정(3rd-party 쿠키 차단)으로 embed가 차단될 수 있습니다.</li>
-                        <li>위의 "Facebook에서 열기" 버튼을 클릭하여 Facebook에서 직접 시청하세요.</li>
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              );
-            }
-
-            // File 처리
-            if (fileUrl) {
-              return (
-                <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, overflow: "hidden", borderRadius: "8px", backgroundColor: "#000" }}>
-                  <video
-                    src={fileUrl}
-                    controls
-                    style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", objectFit: "contain" }}
-                  />
-                </div>
-              );
-            }
-
-            // 영상 없음
-            return (
-            <div style={{ padding: "32px", backgroundColor: "#f3f4f6", borderRadius: "8px", textAlign: "center" }}>
-              <p style={{ color: "#4b5563" }}>영상을 재생할 수 없습니다. 유효한 URL을 확인해주세요.</p>
-            </div>
-            );
-          })()}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>{title || "미리보기"}</div>
+          <button
+            onClick={onClose}
+            style={{
+              border: "1px solid #ddd",
+              background: "#fff",
+              borderRadius: 8,
+              padding: "6px 10px",
+              cursor: "pointer",
+            }}
+          >
+            닫기
+          </button>
         </div>
+
+        <div style={{ flex: 1, minHeight: 0 }}>{renderContent()}</div>
       </div>
     </div>
   );
-
-  // React Portal을 사용하여 body에 직접 렌더링
-  return createPortal(modalContent, document.body);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

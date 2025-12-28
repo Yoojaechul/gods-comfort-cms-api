@@ -216,7 +216,7 @@ export class AuthController {
     },
   })
   async checkEmail(@Body() checkEmailDto: CheckEmailDto) {
-    return this.authService.checkEmail(checkEmailDto.email);
+    return this.authService.checkEmail(checkEmailDto);
   }
 
   /**

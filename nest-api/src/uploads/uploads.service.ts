@@ -1,75 +1,50 @@
-import { Injectable } from '@nestjs/common';
-import * as path from 'path';
-import * as fs from 'fs';
-import { randomBytes } from 'crypto';
+// nest-api/src/uploads/uploads.service.ts
+import { Injectable } from "@nestjs/common";
+import * as fs from "fs";
+import * as path from "path";
 
 @Injectable()
 export class UploadsService {
   /**
-   * 썸네일 파일 저장
-   * @param file - 업로드된 파일
-   * @returns 저장된 파일의 썸네일 URL
+   * 썸네일 파일을 저장하고, CMS에서 바로 사용할 수 있는 상대경로 thumbnailUrl을 반환합니다.
+   *
+   * ✅ Cloud Run 권장:
+   * - 저장 경로: /tmp/uploads/thumbnails (쓰기 가능)
+   * - 반환 URL:  /uploads/thumbnails/<filename> (정적서빙은 main.ts에서 /uploads -> /tmp/uploads 연결)
    */
-  async saveThumbnail(
-    file: Express.Multer.File,
-  ): Promise<{ thumbnailUrl: string }> {
-    // 업로드 디렉토리 경로 (프로젝트 루트 기준)
-    const uploadsDir = path.join(process.cwd(), 'uploads', 'thumbnails');
+  async saveThumbnail(file: Express.Multer.File) {
+    // 1) 저장 디렉토리 생성 (Cloud Run 쓰기 가능 경로)
+    const uploadsDir = path.join("/tmp", "uploads", "thumbnails");
+    await fs.promises.mkdir(uploadsDir, { recursive: true });
 
-    // 디렉토리가 없으면 생성
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-      console.log(`[UploadsService] 업로드 디렉토리 생성: ${uploadsDir}`);
+    // 2) 확장자/파일명 생성
+    const original = file?.originalname || "thumbnail.png";
+    const extRaw = path.extname(original).toLowerCase();
+    const allowedExts = new Set([".png", ".jpg", ".jpeg", ".webp"]);
+    const ext = allowedExts.has(extRaw) ? extRaw : ".png";
+
+    const filename = `${Date.now()}_${Math.random().toString(16).slice(2)}${ext}`;
+    const filePath = path.join(uploadsDir, filename);
+
+    // 3) 파일 저장
+    if (!file?.buffer || file.buffer.length === 0) {
+      throw new Error("Empty file buffer");
     }
+    await fs.promises.writeFile(filePath, file.buffer);
 
-    // 고유한 파일명 생성 (타임스탬프 + 랜덤 문자열)
-    const timestamp = Date.now();
-    const randomStr = randomBytes(5).toString('hex');
-    const fileExtension = path.extname(file.originalname).toLowerCase();
-    const filename = `${timestamp}_${randomStr}${fileExtension}`;
-    const filepath = path.join(uploadsDir, filename);
+    // 4) 반환 URL은 절대 URL이 아닌 상대경로로 (Mixed Content 방지)
+    const thumbnailUrl = `/uploads/thumbnails/${filename}`;
 
-    // 파일 저장
-    fs.writeFileSync(filepath, file.buffer);
-    console.log(`[UploadsService] 파일 저장 완료: ${filename}`);
-
-    // URL 생성 (프론트엔드에서 접근 가능한 경로)
-    // NestJS 서버 포트는 8788이지만, 프론트엔드가 8787을 사용하므로 8787로 반환
-    // 또는 상대 경로로 반환하여 프론트엔드가 자동으로 처리하도록 함
-    const baseUrl = process.env.API_BASE_URL || 'http://localhost:8788';
-    // Fastify 서버(8787)에서도 같은 경로로 서빙되므로 절대 URL 반환
-    const thumbnailUrl = `${baseUrl}/uploads/thumbnails/${filename}`;
+    // 5) 로그 (Cloud Run 로그에서 저장/경로 확인용)
+    console.log("[saveThumbnail] originalname =", original);
+    console.log("[saveThumbnail] uploadsDir    =", uploadsDir);
+    console.log("[saveThumbnail] filePath      =", filePath);
+    console.log("[saveThumbnail] thumbnailUrl  =", thumbnailUrl);
 
     return {
-      thumbnailUrl: thumbnailUrl,
+      thumbnailUrl,
+      filename,
+      video_id: null,
     };
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

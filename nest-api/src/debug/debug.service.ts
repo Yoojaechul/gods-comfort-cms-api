@@ -19,33 +19,25 @@ export class DebugService {
   async getVersionInfo(): Promise<{
     appName: string;
     nodeEnv: string;
-    envVars: {
-      CMS_TEST_ADMIN_EMAIL: 'set' | 'unset';
-      CMS_TEST_ADMIN_PASSWORD: 'set' | 'unset';
-      CMS_TEST_CREATOR_EMAIL: 'set' | 'unset';
-      CMS_TEST_CREATOR_PASSWORD: 'set' | 'unset';
-      SEED_FORCE_PASSWORD_UPDATE: 'set' | 'unset';
-      DEBUG_ENDPOINTS: 'set' | 'unset';
-    };
+    envVars: Record<string, 'set' | 'unset'>;
     buildInfo?: {
       gitCommitSha?: string;
       buildTimestamp?: string;
     };
   }> {
-    // App name
     const appName = 'godscomfortword-nest-api';
 
-    // 환경변수 존재 여부 (set/unset)
-    const envVars = {
+    const envVars: Record<string, 'set' | 'unset'> = {
       CMS_TEST_ADMIN_EMAIL: process.env.CMS_TEST_ADMIN_EMAIL ? 'set' : 'unset',
       CMS_TEST_ADMIN_PASSWORD: process.env.CMS_TEST_ADMIN_PASSWORD ? 'set' : 'unset',
       CMS_TEST_CREATOR_EMAIL: process.env.CMS_TEST_CREATOR_EMAIL ? 'set' : 'unset',
       CMS_TEST_CREATOR_PASSWORD: process.env.CMS_TEST_CREATOR_PASSWORD ? 'set' : 'unset',
       SEED_FORCE_PASSWORD_UPDATE: process.env.SEED_FORCE_PASSWORD_UPDATE ? 'set' : 'unset',
       DEBUG_ENDPOINTS: process.env.DEBUG_ENDPOINTS ? 'set' : 'unset',
+      JWT_SECRET: process.env.JWT_SECRET ? 'set' : 'unset',
+      SQLITE_DB_PATH: process.env.SQLITE_DB_PATH ? 'set' : 'unset',
     };
 
-    // Build info (있으면 표시)
     const buildInfo: any = {};
 
     // Git commit SHA
@@ -66,8 +58,8 @@ export class DebugService {
           }
         }
       }
-    } catch (error) {
-      // buildInfo에 추가하지 않음 (없으면 생략)
+    } catch {
+      // ignore
     }
 
     // Build timestamp
@@ -81,8 +73,8 @@ export class DebugService {
           buildInfo.buildTimestamp = stats.mtime.toISOString();
         }
       }
-    } catch (error) {
-      // buildInfo에 추가하지 않음 (없으면 생략)
+    } catch {
+      // ignore
     }
 
     const result: any = {
@@ -91,7 +83,6 @@ export class DebugService {
       envVars,
     };
 
-    // buildInfo가 비어있지 않으면 추가
     if (Object.keys(buildInfo).length > 0) {
       result.buildInfo = buildInfo;
     }
@@ -101,59 +92,31 @@ export class DebugService {
 
   /**
    * DB 정보 조회
+   * - users 테이블 count 및 특정 계정 존재 여부 확인
+   * - ✅ salt 컬럼 기준(구: api_key_salt 사용 금지)
    */
   async getDbInfo(): Promise<{
-    connection: {
-      driver: string;
-      type: string;
-    };
-    sqlite?: {
-      dbPath: string;
-      dbPathAbsolute: string;
-      fileExists: boolean;
-      fileSize?: number;
-    };
+    connection: { driver: string; type: string };
+    sqlite: { dbPath: string; dbPathAbsolute: string; fileExists: boolean; fileSize?: number };
     users: {
       totalCount: number;
-      consulting_manager: {
-        exists: boolean;
-        role: string;
-        status: string;
-        siteId: string | null;
-        passwordHashLength: number;
-        passwordHashMasked?: string;
-        saltLength: number;
-        saltMasked?: string;
-      };
-      j1dly1: {
-        exists: boolean;
-        role: string;
-        status: string;
-        siteId: string | null;
-        passwordHashLength: number;
-        passwordHashMasked?: string;
-        saltLength: number;
-        saltMasked?: string;
-      };
+      consulting_manager: any;
+      j1dly1: any;
     };
   }> {
     const db = this.databaseService.getDb();
 
-    // DB 연결 정보
     const connection = {
       driver: 'better-sqlite3',
       type: 'sqlite',
     };
 
-    // SQLite DB 경로 확인
     const dbPath =
       this.configService.get<string>('SQLITE_DB_PATH') ||
       this.configService.get<string>('DB_PATH') ||
       '/app/data/cms.db';
 
-    const dbPathAbsolute = path.isAbsolute(dbPath)
-      ? dbPath
-      : path.join(process.cwd(), dbPath);
+    const dbPathAbsolute = path.isAbsolute(dbPath) ? dbPath : path.join(process.cwd(), dbPath);
 
     let dbFileExists = false;
     let dbFileSize: number | undefined;
@@ -165,24 +128,53 @@ export class DebugService {
         dbFileSize = stats.size;
       }
     } catch (error) {
-      this.logger.debug('DB 파일 정보 조회 실패:', error);
+      this.logger.debug('DB 파일 정보 조회 실패:', error as any);
     }
 
-    // Users 테이블 집계
-    const totalCount = (db.prepare('SELECT COUNT(*) as count FROM users').get() as any).count;
+    // total users
+    let totalCount = 0;
+    try {
+      totalCount = (db.prepare('SELECT COUNT(*) as count FROM users').get() as any).count || 0;
+    } catch {
+      totalCount = 0;
+    }
 
     const adminEmail = 'consulting_manager@naver.com';
     const creatorEmail = 'j1dly1@naver.com';
 
     const adminUser = db
-      .prepare('SELECT password_hash, api_key_salt, role, status, site_id FROM users WHERE email = ?')
+      .prepare('SELECT password_hash, salt, role, status, siteId FROM users WHERE email = ?')
       .get(adminEmail) as any;
 
     const creatorUser = db
-      .prepare('SELECT password_hash, api_key_salt, role, status, site_id FROM users WHERE email = ?')
+      .prepare('SELECT password_hash, salt, role, status, siteId FROM users WHERE email = ?')
       .get(creatorEmail) as any;
 
-    const result: any = {
+    const packUser = (u: any) => {
+      if (!u) {
+        return {
+          exists: false,
+          role: '',
+          status: '',
+          siteId: null,
+          passwordHashLength: 0,
+          saltLength: 0,
+        };
+      }
+
+      return {
+        exists: true,
+        role: u.role || '',
+        status: u.status || '',
+        siteId: u.siteId ?? null,
+        passwordHashLength: u.password_hash?.length || 0,
+        passwordHashMasked: u.password_hash ? this.maskHash(u.password_hash) : undefined,
+        saltLength: u.salt?.length || 0,
+        saltMasked: u.salt ? this.maskHash(u.salt) : undefined,
+      };
+    };
+
+    return {
       connection,
       sqlite: {
         dbPath,
@@ -192,56 +184,35 @@ export class DebugService {
       },
       users: {
         totalCount,
-        consulting_manager: adminUser
-          ? {
-              exists: true,
-              role: adminUser.role || '',
-              status: adminUser.status || '',
-              siteId: adminUser.site_id,
-              passwordHashLength: adminUser.password_hash?.length || 0,
-              passwordHashMasked: adminUser.password_hash
-                ? this.maskHash(adminUser.password_hash)
-                : undefined,
-              saltLength: adminUser.api_key_salt?.length || 0,
-              saltMasked: adminUser.api_key_salt
-                ? this.maskHash(adminUser.api_key_salt)
-                : undefined,
-            }
-          : {
-              exists: false,
-              role: '',
-              status: '',
-              siteId: null,
-              passwordHashLength: 0,
-              saltLength: 0,
-            },
-        j1dly1: creatorUser
-          ? {
-              exists: true,
-              role: creatorUser.role || '',
-              status: creatorUser.status || '',
-              siteId: creatorUser.site_id,
-              passwordHashLength: creatorUser.password_hash?.length || 0,
-              passwordHashMasked: creatorUser.password_hash
-                ? this.maskHash(creatorUser.password_hash)
-                : undefined,
-              saltLength: creatorUser.api_key_salt?.length || 0,
-              saltMasked: creatorUser.api_key_salt
-                ? this.maskHash(creatorUser.api_key_salt)
-                : undefined,
-            }
-          : {
-              exists: false,
-              role: '',
-              status: '',
-              siteId: null,
-              passwordHashLength: 0,
-              saltLength: 0,
-            },
+        consulting_manager: packUser(adminUser),
+        j1dly1: packUser(creatorUser),
       },
     };
+  }
 
-    return result;
+  /**
+   * ✅ 테이블 목록/row count 조회
+   * - GET /debug/db-tables 에서 사용
+   */
+  async getDbTables(): Promise<{ tables: Array<{ name: string; count: number }> }> {
+    const db = this.databaseService.getDb();
+
+    const tables = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )
+      .all() as Array<{ name: string }>;
+
+    const result = tables.map((t) => {
+      try {
+        const row = db.prepare(`SELECT COUNT(*) as count FROM ${t.name}`).get() as any;
+        return { name: t.name, count: row?.count ?? 0 };
+      } catch {
+        return { name: t.name, count: -1 };
+      }
+    });
+
+    return { tables: result };
   }
 
   /**
@@ -251,42 +222,43 @@ export class DebugService {
     userFound: boolean;
     passwordHashLength?: number;
     saltLength?: number;
-    hashMethod?: 'scrypt' | 'bcrypt' | 'unknown';
+    hashMethod?: 'sha512' | 'bcrypt' | 'scrypt' | 'unknown';
     match?: boolean;
     error?: string;
   }> {
     try {
       const db = this.databaseService.getDb();
+
+      // ✅ 현재 스키마: salt 컬럼 사용
       const user = db
-        .prepare("SELECT password_hash, api_key_salt FROM users WHERE email = ? AND status = 'active'")
+        .prepare("SELECT password_hash, salt FROM users WHERE email = ? AND status = 'active'")
         .get(email) as any;
 
       if (!user) {
-        return {
-          userFound: false,
-        };
+        return { userFound: false };
       }
 
       const passwordHashLength = user.password_hash?.length || 0;
-      const saltLength = user.api_key_salt?.length || 0;
+      const saltLength = user.salt?.length || 0;
 
-      // 해시 방식 판별
-      let hashMethod: 'scrypt' | 'bcrypt' | 'unknown' = 'unknown';
+      // 참고용 해시 방식 판별
+      let hashMethod: 'sha512' | 'bcrypt' | 'scrypt' | 'unknown' = 'unknown';
       if (user.password_hash) {
         if (user.password_hash.startsWith('$2')) {
           hashMethod = 'bcrypt';
         } else if (user.password_hash.length === 128 && /^[0-9a-f]+$/i.test(user.password_hash)) {
-          hashMethod = 'scrypt';
+          // sha512 hex(128)도 이 조건에 걸리므로, 프로젝트 DB 서비스가 sha512이면 sha512로 표기
+          hashMethod = 'sha512';
         }
       }
 
-      // 비밀번호 매칭 확인
       let match = false;
       try {
+        // ✅ DatabaseService 시그니처: verifyPassword(password, storedHash, salt)
         match = this.databaseService.verifyPassword(
           password,
-          user.password_hash,
-          user.api_key_salt || '',
+          user.password_hash || '',
+          user.salt || '',
         );
       } catch (verifyError) {
         return {
@@ -318,12 +290,9 @@ export class DebugService {
    * 해시/솔트 마스킹 (앞 8글자 + ... + 뒤 8글자)
    */
   private maskHash(hash: string): string {
-    if (!hash || hash.length <= 16) {
-      return '***';
-    }
+    if (!hash || hash.length <= 16) return '***';
     const front = hash.substring(0, 8);
     const back = hash.substring(hash.length - 8);
     return `${front}...${back}`;
-  }
+    }
 }
-

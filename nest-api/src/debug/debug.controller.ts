@@ -38,6 +38,12 @@ export class DebugController {
     return this.debugService.getVersionInfo();
   }
 
+  @Get('db-tables')
+  getDbTables() {
+    return this.debugService.getDbTables();
+  }
+
+
   /**
    * DB 정보 조회
    */
