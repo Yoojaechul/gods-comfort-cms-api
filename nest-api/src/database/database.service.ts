@@ -55,7 +55,7 @@ private ensureMigrations(db: any) {
       this.logger.log('[DB] ✅ SQLite 데이터베이스 연결 성공');
 
       this.ensureSchema();
-      this.ensureMigrations(this.db);
+
       this.logTables();
       this.logUsersTableSchema();
     } catch (error) {
