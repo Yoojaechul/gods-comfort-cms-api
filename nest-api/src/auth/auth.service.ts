@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -28,6 +29,39 @@ export class AuthService {
    * 로그인
    * - identifier: username/email 둘 다 허용 (현재는 email 위주)
    */
+
+async seedRun() {
+  // 운영에서 보호: CMS_DEBUG=true일 때만
+  if (process.env.NODE_ENV === 'production' && process.env.CMS_DEBUG !== 'true') {
+    throw new ForbiddenException('CMS_DEBUG=true일 때만 사용 가능합니다.');
+  }
+
+  const adminId = process.env.CMS_TEST_ADMIN_EMAIL || 'consulting_manager@naver.com';
+  const adminPw = process.env.CMS_TEST_ADMIN_PASSWORD || '123456789';
+
+  const creatorId = process.env.CMS_TEST_CREATOR_EMAIL || 'j1d1y1@naver.com';
+  const creatorPw = process.env.CMS_TEST_CREATOR_PASSWORD || '123456789QWER';
+
+  // ✅ 여기가 핵심: "없으면 INSERT, 있으면 UPDATE" (Upsert)
+  this.databaseService.upsertUserByEmail({
+    email: adminId,
+    role: 'admin',
+    password: adminPw,
+  });
+
+  this.databaseService.upsertUserByEmail({
+    email: creatorId,
+    role: 'creator',
+    password: creatorPw,
+  });
+
+  return { ok: true };
+}
+
+
+
+
+
   async login(loginDto: LoginDto) {
     const identifier = (loginDto as any)?.username || (loginDto as any)?.email || (loginDto as any)?.identifier;
     const password = (loginDto as any)?.password;

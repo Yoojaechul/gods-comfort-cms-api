@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import Database from 'better-sqlite3';
 import * as path from 'path';
 import * as fs from 'fs';
-import { createHash, timingSafeEqual } from 'crypto';
+import { createHash, timingSafeEqual, randomUUID, randomBytes } from 'crypto';
 
 /**
  * SQLite 데이터베이스 서비스
@@ -13,6 +13,17 @@ import { createHash, timingSafeEqual } from 'crypto';
 @Injectable()
 export class DatabaseService implements OnModuleInit {
   private readonly logger = new Logger(DatabaseService.name);
+
+
+// 예: database.service.ts 안
+private ensureMigrations(db: any) {
+  // videos.site_id 없으면 추가
+  const cols = db.prepare(`PRAGMA table_info(videos)`).all();
+  const hasSiteId = cols.some((c: any) => c.name === "site_id");
+  if (!hasSiteId) {
+    db.prepare(`ALTER TABLE videos ADD COLUMN site_id TEXT`).run();
+  }
+}
 
   /**
    * NOTE:
@@ -27,7 +38,7 @@ export class DatabaseService implements OnModuleInit {
       this.configService.get<string>('SQLITE_DB_PATH') ||
       this.configService.get<string>('DB_PATH') ||
       '/mnt/cmsdata/cms.db';
-
+this.ensureMigrations(this.db);
     this.logger.log(`Using SQLite DB Path: ${dbPath}`);
 
     try {
@@ -251,6 +262,119 @@ export class DatabaseService implements OnModuleInit {
        WHERE id = ?
     `);
     return stmt.run(newHash, newSalt, userId).changes;
+  }
+
+  /**
+   * Upsert user by email
+   * - If user exists: update only provided fields (not undefined)
+   * - If user doesn't exist: insert new user with generated id
+   * - Returns the updated/inserted user row
+   */
+  upsertUserByEmail(data: {
+    email: string;
+    role?: string;
+    password?: string;
+    status?: string;
+    siteId?: string;
+  }): { id: string; email: string; role: string } {
+    const { email, role, password, status, siteId } = data;
+
+    if (!email) {
+      throw new Error('Email is required for upsertUserByEmail');
+    }
+
+    // Find existing user
+    const existingUser = this.findUserByEmail(email);
+    const hasUpdatedAt = this.hasColumn('users', 'updated_at');
+
+    if (existingUser) {
+      // Update existing user - only update fields that are provided (not undefined)
+      const updates: string[] = [];
+      const values: any[] = [];
+
+      if (role !== undefined) {
+        updates.push('role = ?');
+        values.push(role);
+      }
+
+      if (status !== undefined) {
+        updates.push('status = ?');
+        values.push(status);
+      }
+
+      if (siteId !== undefined) {
+        updates.push('siteId = ?');
+        values.push(siteId);
+      }
+
+      if (password !== undefined) {
+        // Generate new salt and hash password
+        const salt = randomBytes(16).toString('hex'); // 32 chars
+        const passwordHash = this.hashPassword(password, salt);
+
+        updates.push('password_hash = ?');
+        updates.push('salt = ?');
+        values.push(passwordHash, salt);
+      }
+
+      if (hasUpdatedAt) {
+        updates.push("updated_at = datetime('now')");
+      }
+
+      if (updates.length > 0) {
+        values.push(email); // WHERE clause
+
+        const stmt = this.db.prepare(`
+          UPDATE users
+             SET ${updates.join(', ')}
+           WHERE email = ?
+        `);
+        stmt.run(...values);
+      }
+
+      // Return updated user
+      const updatedUser = this.findUserByEmail(email);
+      return {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        role: updatedUser.role || 'creator',
+      };
+    } else {
+      // Insert new user
+      const id = randomUUID();
+      const defaultRole = role || 'creator';
+      const defaultStatus = status || 'active';
+
+      // Handle password if provided
+      let passwordHash: string | null = null;
+      let salt: string | null = null;
+
+      if (password !== undefined) {
+        salt = randomBytes(16).toString('hex'); // 32 chars
+        passwordHash = this.hashPassword(password, salt);
+      }
+
+      if (hasUpdatedAt) {
+        const stmt = this.db.prepare(`
+          INSERT INTO users (id, email, role, status, siteId, password_hash, salt, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        `);
+        stmt.run(id, email, defaultRole, defaultStatus, siteId || null, passwordHash, salt);
+      } else {
+        const stmt = this.db.prepare(`
+          INSERT INTO users (id, email, role, status, siteId, password_hash, salt, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        `);
+        stmt.run(id, email, defaultRole, defaultStatus, siteId || null, passwordHash, salt);
+      }
+
+      // Return inserted user
+      return {
+        id,
+        email,
+        role: defaultRole,
+      };
+    }
   }
 
   private hasColumn(table: string, column: string): boolean {
