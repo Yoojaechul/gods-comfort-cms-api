@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import VideoFormModal from "./admin/VideoFormModal";
-import { normalizeThumbnailUrl, extractYoutubeId, extractYouTubeIdFromVideo, resolveMediaUrl } from "../utils/videoMetadata";
+import { resolveThumbnailUrl, extractYoutubeId, extractYouTubeIdFromVideo } from "../utils/videoMetadata";
 import { getRealPlaybackCount } from "../utils/videoMetrics";
 import { mapLanguageToEnglish } from "../utils/languageMapper";
 import { apiDelete } from "../lib/apiClient";
@@ -210,19 +210,15 @@ export default function VideoTable({
       return null;
     }
 
-    // 상대경로를 절대경로로 변환 (resolveMediaUrl 사용)
-    const resolvedThumbnailUrl = resolveMediaUrl(rawThumbnailUrl);
+    // 썸네일 URL 해석 (상대경로를 절대경로로 변환, localhost 치환 등)
+    const resolvedThumbnailUrl = resolveThumbnailUrl(rawThumbnailUrl);
 
-    // resolveMediaUrl이 null을 반환하더라도 원본 값이 있으면 원본 사용 (fallback)
+    // resolveThumbnailUrl이 성공하면 반환
     if (resolvedThumbnailUrl) {
       return resolvedThumbnailUrl;
     }
 
-    // resolveMediaUrl이 null을 반환했지만 원본 값이 있으면 원본 반환
-    // (예: 예상치 못한 형식의 URL이지만 시도해볼 가치는 있음)
-    if (rawThumbnailUrl && rawThumbnailUrl.trim()) {
-      return rawThumbnailUrl.trim();
-    }
+    // resolveThumbnailUrl이 실패한 경우 placeholder 유지 (null 반환)
 
     // YouTube인 경우 기본 썸네일 생성 (개선된 YouTube ID 추출 함수 사용)
     if (video.video_type === "youtube" || (video as any).sourceType === "youtube") {

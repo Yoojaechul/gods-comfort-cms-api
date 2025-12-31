@@ -1,7 +1,7 @@
 import type { Video } from "../types/video";
 import { formatDateTimeKST } from "../utils/date";
 import { getLanguageLabel } from "../utils/language";
-import { normalizeThumbnailUrl, resolveMediaUrl } from "../utils/videoMetadata";
+import { normalizeThumbnailUrl } from "../utils/videoMetadata";
 import { getRealPlaybackCount } from "../utils/videoMetrics";
 import "./VideoCard.css";
 
@@ -41,8 +41,7 @@ export default function VideoCard({
     (video as any).thumbnailImage ||
     (video as any).thumbnail_image ||
     null;
-  const normalizedThumbnailUrl = normalizeThumbnailUrl(rawThumbnailUrl);
-  const thumbnailUrl = resolveMediaUrl(normalizedThumbnailUrl);
+  const thumbnailUrl = normalizeThumbnailUrl(rawThumbnailUrl);
   
   // 등록일시 (다양한 필드명 지원)
   const uploadDate = (video as any).created_at || video.uploadedAt || (video as any).upload_date || video.createdAt;

@@ -4,13 +4,7 @@
  * - 썸네일 URL 정규화 유틸 포함
  */
 
-/**
- * API Base URL을 가져옵니다.
- */
-function getApiBase(): string {
-  const env = import.meta.env;
-  return env.VITE_CMS_API_BASE_URL || env.VITE_API_BASE_URL || "https://api.godcomfortword.com";
-}
+import { getApiBase } from "../config";
 
 export interface VideoMetadata {
   title?: string;
@@ -202,7 +196,7 @@ export async function fetchYouTubeMetadata(
 
 /**
  * 미디어 URL 해석 함수
- * - https:// 또는 http://로 시작하면 그대로 반환
+ * - https:// 또는 http://로 시작하되 localhost/127.0.0.1인 경우 VITE_API_BASE_URL로 변환
  * - "/"로 시작하는 상대경로(예: "/uploads/...")는 VITE_API_BASE_URL을 prefix로 붙여서 절대 URL로 변환
  * - 기존 유튜브 썸네일 동작은 절대 깨지지 않게 보장
  */
@@ -211,19 +205,33 @@ export function resolveMediaUrl(url: string | null | undefined): string | null {
 
   const trimmed = url.trim();
 
-  // https:// 또는 http://로 시작하면 그대로 사용
+  // https:// 또는 http://로 시작하는 경우
   if (trimmed.startsWith("https://") || trimmed.startsWith("http://")) {
+    // localhost 또는 127.0.0.1인 경우 VITE_API_BASE_URL로 변환
+    try {
+      const urlObj = new URL(trimmed);
+      const hostname = urlObj.hostname;
+      
+      if (hostname === "localhost" || hostname === "127.0.0.1") {
+        const apiBaseUrl = getApiBase();
+        
+        // base URL 끝의 슬래시 제거
+        const normalizedBase = String(apiBaseUrl).trim().replace(/\/+$/, "");
+        // 경로와 쿼리, 해시는 유지
+        const pathAndQuery = urlObj.pathname + urlObj.search + urlObj.hash;
+        return `${normalizedBase}${pathAndQuery}`;
+      }
+    } catch {
+      // URL 파싱 실패 시 그대로 반환
+    }
+    
+    // localhost가 아닌 경우 그대로 반환 (YouTube 썸네일 등)
     return trimmed;
   }
 
-  // "/"로 시작하는 상대경로는 VITE_CMS_API_BASE_URL 또는 VITE_API_BASE_URL을 prefix로 붙여서 절대 URL로 변환
+  // "/"로 시작하는 상대경로는 getApiBase()를 사용하여 절대 URL로 변환
   if (trimmed.startsWith("/")) {
-    const env = import.meta.env;
-    const apiBaseUrl = env.VITE_CMS_API_BASE_URL || env.VITE_API_BASE_URL;
-    if (!apiBaseUrl) {
-      console.warn("[resolveMediaUrl] VITE_CMS_API_BASE_URL 또는 VITE_API_BASE_URL이 설정되지 않았습니다.");
-      return trimmed;
-    }
+    const apiBaseUrl = getApiBase();
 
     // base URL 끝의 슬래시 제거
     const normalizedBase = String(apiBaseUrl).trim().replace(/\/+$/, "");
@@ -235,38 +243,78 @@ export function resolveMediaUrl(url: string | null | undefined): string | null {
 }
 
 /**
+ * 썸네일 URL 해석 함수 (MyVideos 리스트용)
+ * - thumbnail_url이 /uploads/... 처럼 상대경로면 반드시 API_BASE_URL + thumbnail_url로 결합
+ * - thumbnail_url이 http/https면 그대로 유지 (단, localhost/127.0.0.1는 API_BASE_URL로 치환)
+ * - localhost/127.0.0.1로 시작하는 URL은 무조건 API_BASE_URL로 치환
+ * - 결합 시 baseURL 끝 슬래시 제거, path 앞 슬래시 보정 (중복 // 방지)
+ * - data URL은 그대로
+ * 
+ * @param thumbnailUrl - 썸네일 URL (상대경로 또는 절대 URL)
+ * @returns 절대 URL 또는 null (실패 시 placeholder 사용)
+ */
+export function resolveThumbnailUrl(
+  thumbnailUrl: string | null | undefined
+): string | null {
+  return normalizeThumbnailUrl(thumbnailUrl);
+}
+
+/**
  * 썸네일 URL 정규화
- * - 상대경로를 API Base URL 기준 절대경로로 변환
- * - localhost/127.0.0.1 잘못된 포트가 있으면 baseUrl host로 교체
+ * - thumbnail_url이 /uploads/... 처럼 상대경로면 반드시 API_BASE_URL + thumbnail_url로 결합
+ * - thumbnail_url이 http/https면 그대로 유지 (단, localhost/127.0.0.1는 API_BASE_URL로 치환)
+ * - localhost/127.0.0.1로 시작하는 URL은 무조건 API_BASE_URL로 치환
+ * - 결합 시 baseURL 끝 슬래시 제거, path 앞 슬래시 보정 (중복 // 방지)
  * - data URL은 그대로
  */
 export function normalizeThumbnailUrl(
-  thumbnailUrl: string | null | undefined,
-  baseUrl?: string
+  thumbnailUrl: string | null | undefined
 ): string | null {
-  // baseUrl이 제공되지 않으면 환경 변수에서 가져오기
-  const apiBase = baseUrl || getApiBase();
   if (!thumbnailUrl || !thumbnailUrl.trim()) return null;
 
   const trimmed = thumbnailUrl.trim();
 
+  // data URL은 그대로 반환
   if (trimmed.startsWith("data:")) return trimmed;
 
+  // http:// 또는 https://로 시작하는 경우
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    if (trimmed.includes("127.0.0.1:7242") || trimmed.includes("localhost:7242")) {
-      try {
-        const u = new URL(trimmed);
-        const b = new URL(apiBase);
-        u.host = b.host;
-        return u.toString();
-      } catch {
-        return trimmed;
+    // localhost 또는 127.0.0.1인 경우 API_BASE_URL로 치환
+    try {
+      const urlObj = new URL(trimmed);
+      const hostname = urlObj.hostname;
+      
+      if (hostname === "localhost" || hostname === "127.0.0.1") {
+        const apiBaseUrl = getApiBase();
+        
+        // base URL 끝의 슬래시 제거
+        const normalizedBase = String(apiBaseUrl).trim().replace(/\/+$/, "");
+        // 경로와 쿼리, 해시는 유지
+        const pathAndQuery = urlObj.pathname + urlObj.search + urlObj.hash;
+        return `${normalizedBase}${pathAndQuery}`;
       }
+    } catch {
+      // URL 파싱 실패 시 그대로 반환
     }
+    
+    // localhost가 아닌 경우 그대로 반환 (YouTube 썸네일 등)
     return trimmed;
   }
 
-  const normalizedBase = apiBase.endsWith("/") ? apiBase.slice(0, -1) : apiBase;
+  // "/"로 시작하는 상대경로는 API_BASE_URL + thumbnail_url로 결합
+  if (trimmed.startsWith("/")) {
+    const apiBaseUrl = getApiBase();
+    
+    // base URL 끝의 슬래시 제거
+    const normalizedBase = String(apiBaseUrl).trim().replace(/\/+$/, "");
+    // path는 이미 /로 시작하므로 그대로 사용
+    return `${normalizedBase}${trimmed}`;
+  }
+
+  // 그 외의 경우 (상대경로로 보이지만 /로 시작하지 않는 경우)
+  // API_BASE_URL + / + path로 결합
+  const apiBaseUrl = getApiBase();
+  const normalizedBase = String(apiBaseUrl).trim().replace(/\/+$/, "");
   const normalizedPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
   return `${normalizedBase}${normalizedPath}`;
 }

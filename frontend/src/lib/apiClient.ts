@@ -1,35 +1,6 @@
 // frontend/src/lib/apiClient.ts
 
-/**
- * API Base URL을 가져옵니다.
- * Vite 환경 변수를 직접 사용하며, production에서는 기본값을 강제합니다.
- */
-function getApiBase(): string {
-  const env = import.meta.env;
-  
-  // 환경 변수에서 읽기
-  let apiBase = env.VITE_CMS_API_BASE_URL || env.VITE_API_BASE_URL;
-  
-  // 환경 변수가 없거나 빈 문자열이면 기본값 사용 (production 안전성)
-  if (!apiBase || String(apiBase).trim() === "") {
-    apiBase = "https://api.godcomfortword.com";
-  }
-  
-  const trimmed = String(apiBase).trim();
-  
-  // 빈 문자열 체크 (방어 로직)
-  if (!trimmed) {
-    return "https://api.godcomfortword.com";
-  }
-  
-  // HTTP/HTTPS 체크
-  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-    console.warn(`[apiClient] Invalid API base URL format, using default: ${trimmed}`);
-    return "https://api.godcomfortword.com";
-  }
-  
-  return trimmed;
-}
+import { getApiBase } from "../config";
 
 /**
  * baseURL과 path를 안전하게 결합합니다.

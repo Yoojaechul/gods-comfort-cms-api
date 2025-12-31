@@ -149,53 +149,68 @@ export class VideosService {
     site_id?: string;
     limit: number;
   }): Promise<any[]> {
-    const db = this.databaseService.getDb();
-    
-    // 컬럼 존재 여부 확인
-    const cols = db.prepare(`PRAGMA table_info(videos)`).all() as Array<{ name: string }>;
-    const columnNames = cols.map((c) => c.name);
-    const hasSiteId = columnNames.includes('site_id');
-    const hasStatus = columnNames.includes('status');
-    const hasPublished = columnNames.includes('published');
-    
-    let query = "SELECT * FROM videos WHERE visibility = 'public'";
-    const params: any[] = [];
+    try {
+      const db = this.databaseService.getDb();
+      
+      // 컬럼 존재 여부 확인
+      const cols = db.prepare(`PRAGMA table_info(videos)`).all() as Array<{ name: string }>;
+      const columnNames = cols.map((c) => c.name);
+      const hasSiteId = columnNames.includes('site_id');
+      const hasLanguage = columnNames.includes('language');
+      const hasLang = columnNames.includes('lang');
+      const hasPlatform = columnNames.includes('platform');
+      const hasCreatedAt = columnNames.includes('created_at');
+      
+      // site_id는 필수
+      if (!options.site_id) {
+        this.logger.warn('[getPublicVideos] site_id is required, returning empty array');
+        return [];
+      }
 
-    // status 필터: active인 영상만 표시 (status 컬럼이 있는 경우)
-    if (hasStatus) {
-      query += " AND (status = 'active' OR status IS NULL)";
+      if (!hasSiteId) {
+        this.logger.warn('[getPublicVideos] site_id column does not exist, returning empty array');
+        return [];
+      }
+      
+      let query = 'SELECT * FROM videos WHERE site_id = ?';
+      const params: any[] = [options.site_id];
+
+      // language 필터 (language 또는 lang 컬럼이 있는 경우)
+      if (options.language) {
+        if (hasLanguage) {
+          query += ' AND language = ?';
+          params.push(options.language);
+        } else if (hasLang) {
+          query += ' AND lang = ?';
+          params.push(options.language);
+        }
+      }
+
+      // platform 필터 (platform 컬럼이 있는 경우)
+      if (options.platform && hasPlatform) {
+        query += ' AND platform = ?';
+        params.push(options.platform);
+      }
+
+      // 정렬: created_at DESC (없으면 id DESC)
+      if (hasCreatedAt) {
+        query += ' ORDER BY created_at DESC';
+      } else {
+        query += ' ORDER BY id DESC';
+      }
+
+      query += ' LIMIT ?';
+      params.push(options.limit);
+
+      const rawVideos = db.prepare(query).all(...params) || [];
+      
+      // Normalize video responses with backward-compatible fields
+      return normalizeVideoListResponse(rawVideos);
+    } catch (error: any) {
+      // 에러 발생 시 빈 배열 반환 (500 에러 방지)
+      this.logger.error(`[getPublicVideos] Error: ${error.message}`);
+      return [];
     }
-
-    // published 필터: published가 true인 영상만 표시 (published 컬럼이 있는 경우)
-    if (hasPublished) {
-      query += ' AND (published = 1 OR published IS NULL)';
-    }
-
-    // site_id 필터
-    if (options.site_id && hasSiteId) {
-      query += ' AND site_id = ?';
-      params.push(options.site_id);
-    }
-
-    // language 필터
-    if (options.language) {
-      query += ' AND language = ?';
-      params.push(options.language);
-    }
-
-    // platform 필터
-    if (options.platform) {
-      query += ' AND platform = ?';
-      params.push(options.platform);
-    }
-
-    query += ' ORDER BY created_at DESC LIMIT ?';
-    params.push(options.limit);
-
-    const rawVideos = db.prepare(query).all(...params) || [];
-    
-    // Normalize video responses with backward-compatible fields
-    return normalizeVideoListResponse(rawVideos);
   }
 
   /**

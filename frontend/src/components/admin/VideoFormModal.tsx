@@ -11,7 +11,6 @@ import {
   validateFacebookUrl,
   extractYoutubeId,
   normalizeThumbnailUrl,
-  resolveMediaUrl,
 } from "../../utils/videoMetadata";
 import { LANGUAGE_OPTIONS } from "../../constants/languages";
 import "./VideoFormModal.css";
@@ -197,8 +196,7 @@ export default function VideoFormModal({
 
   const normalizedPreviewSrc = useMemo(() => {
     const src = formData.thumbnailUrl;
-    const normalized = normalizeThumbnailUrl(src) || src || "";
-    return resolveMediaUrl(normalized) || "";
+    return normalizeThumbnailUrl(src) || "";
   }, [formData.thumbnailUrl]);
 
   const handleThumbnailFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
