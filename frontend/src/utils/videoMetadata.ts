@@ -201,6 +201,39 @@ export async function fetchYouTubeMetadata(
 }
 
 /**
+ * 미디어 URL 해석 함수
+ * - https:// 또는 http://로 시작하면 그대로 반환
+ * - "/uploads/..."로 시작하면 VITE_API_BASE_URL을 prefix로 붙여서 절대 URL로 변환
+ * - 기존 유튜브 썸네일 동작은 절대 깨지지 않게 보장
+ */
+export function resolveMediaUrl(url: string | null | undefined): string | null {
+  if (!url || !url.trim()) return null;
+
+  const trimmed = url.trim();
+
+  // https:// 또는 http://로 시작하면 그대로 사용
+  if (trimmed.startsWith("https://") || trimmed.startsWith("http://")) {
+    return trimmed;
+  }
+
+  // "/uploads/..."로 시작하면 VITE_API_BASE_URL을 prefix로 붙여서 절대 URL로 변환
+  if (trimmed.startsWith("/uploads/")) {
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+    if (!apiBaseUrl) {
+      console.warn("[resolveMediaUrl] VITE_API_BASE_URL이 설정되지 않았습니다.");
+      return trimmed;
+    }
+
+    // base URL 끝의 슬래시 제거
+    const normalizedBase = apiBaseUrl.endsWith("/") ? apiBaseUrl.slice(0, -1) : apiBaseUrl;
+    return `${normalizedBase}${trimmed}`;
+  }
+
+  // 그 외의 경우는 그대로 반환 (기존 동작 유지)
+  return trimmed;
+}
+
+/**
  * 썸네일 URL 정규화
  * - 상대경로를 API Base URL 기준 절대경로로 변환
  * - localhost/127.0.0.1 잘못된 포트가 있으면 baseUrl host로 교체

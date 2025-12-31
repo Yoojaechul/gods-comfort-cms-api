@@ -5,7 +5,7 @@ import { uploadThumbnail } from "../../lib/cmsClient";
 import { buildVideoPayload } from "../../utils/videoPayload";
 import { getVideoApiEndpoint } from "../../lib/videoApi";
 import { LANGUAGE_OPTIONS, DEFAULT_LANGUAGE } from "../../constants/languages";
-import { fetchYouTubeMetadata, validateYouTubeUrl, extractYoutubeId } from "../../utils/videoMetadata";
+import { fetchYouTubeMetadata, validateYouTubeUrl, extractYoutubeId, resolveMediaUrl } from "../../utils/videoMetadata";
 import { apiPost } from "../../lib/apiClient";
 import "./BulkVideosModal.css";
 
@@ -188,7 +188,7 @@ export default function BulkVideosModal({ onClose, onSuccess }: BulkVideosModalP
         if (metadata.thumbnail_url) {
           const currentUrlMatches = currentRow.sourceUrl.trim() === url.trim();
           if (!currentRow.thumbnailUrl.trim() || currentUrlMatches) {
-            newRows[index] = { ...newRows[index], thumbnailUrl: metadata.thumbnail_url };
+            newRows[index] = { ...newRows[index], thumbnailUrl: resolveMediaUrl(metadata.thumbnail_url) || metadata.thumbnail_url };
           }
             }
             
@@ -422,10 +422,11 @@ export default function BulkVideosModal({ onClose, onSuccess }: BulkVideosModalP
               
               // thumbnailUrl이 비어있으면 채우기
               if (!row.thumbnailUrl.trim() && metadata.thumbnail_url) {
+                const resolvedThumbnailUrl = resolveMediaUrl(metadata.thumbnail_url) || metadata.thumbnail_url;
                 if (rowIndex >= 0) {
-                  updateRow(rowIndex, "thumbnailUrl", metadata.thumbnail_url);
+                  updateRow(rowIndex, "thumbnailUrl", resolvedThumbnailUrl);
                 }
-                row.thumbnailUrl = metadata.thumbnail_url;
+                row.thumbnailUrl = resolvedThumbnailUrl;
               }
             } catch (err) {
               // fetchYouTubeMetadata는 이제 에러를 throw하지 않으므로 이 블록은 실행되지 않지만, 안전을 위해 유지
@@ -860,7 +861,7 @@ export default function BulkVideosModal({ onClose, onSuccess }: BulkVideosModalP
                     {row.thumbnailUrl && (
                       <div style={{ marginTop: "4px" }}>
                         <img
-                          src={row.thumbnailUrl}
+                          src={resolveMediaUrl(row.thumbnailUrl) || row.thumbnailUrl}
                           alt="thumbnail preview"
                           onError={(e) => {
                             console.error(`행 ${index + 1} 썸네일 이미지 로드 실패:`, row.thumbnailUrl);

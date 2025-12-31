@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import VideoFormModal from "./admin/VideoFormModal";
-import { normalizeThumbnailUrl, extractYoutubeId, extractYouTubeIdFromVideo } from "../utils/videoMetadata";
+import { normalizeThumbnailUrl, extractYoutubeId, extractYouTubeIdFromVideo, resolveMediaUrl } from "../utils/videoMetadata";
 import { getRealPlaybackCount } from "../utils/videoMetrics";
 import { mapLanguageToEnglish } from "../utils/languageMapper";
 import { apiDelete } from "../lib/apiClient";
@@ -198,10 +198,11 @@ export default function VideoTable({
       (video as any).thumbnail_image ||
       null;
 
-    const normalizedThumbnailUrl = normalizeThumbnailUrl(rawThumbnailUrl);
+    // 상대경로를 절대경로로 변환 (resolveMediaUrl 사용)
+    const resolvedThumbnailUrl = rawThumbnailUrl ? resolveMediaUrl(rawThumbnailUrl) : null;
 
-    if (normalizedThumbnailUrl) {
-      return normalizedThumbnailUrl;
+    if (resolvedThumbnailUrl) {
+      return resolvedThumbnailUrl;
     }
 
     // YouTube인 경우 기본 썸네일 생성 (개선된 YouTube ID 추출 함수 사용)
