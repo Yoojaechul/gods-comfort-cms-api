@@ -10,10 +10,15 @@ export class UploadsService {
   private readonly gcsBucket: string | null;
   private readonly storage: Storage | null;
   private readonly bucket: any;
+  private readonly uploadsBasePath: string;
 
   constructor(private readonly configService: ConfigService) {
     // GCS_BUCKET 환경변수 확인
     this.gcsBucket = this.configService.get<string>("GCS_BUCKET") || null;
+
+    // UPLOADS_BASE_PATH 환경변수 확인 (기본값: /app/data/uploads)
+    this.uploadsBasePath = this.configService.get<string>("UPLOADS_BASE_PATH") || "/app/data/uploads";
+    console.log(`[UploadsService] uploadsBasePath: ${this.uploadsBasePath}`);
 
     if (this.gcsBucket) {
       // GCS 사용 가능한 경우 Storage 클라이언트 초기화
@@ -21,10 +26,10 @@ export class UploadsService {
       this.bucket = this.storage.bucket(this.gcsBucket);
       console.log(`[UploadsService] GCS 모드 활성화: bucket=${this.gcsBucket}`);
     } else {
-      // 로컬 /tmp 모드
+      // 로컬 파일 시스템 모드
       this.storage = null;
       this.bucket = null;
-      console.log(`[UploadsService] 로컬 /tmp 모드 사용 (GCS_BUCKET 미설정)`);
+      console.log(`[UploadsService] 로컬 파일 시스템 모드 사용 (GCS_BUCKET 미설정, basePath=${this.uploadsBasePath})`);
     }
   }
 
@@ -36,9 +41,9 @@ export class UploadsService {
    * - 반환 URL: https://storage.googleapis.com/${bucket}/${objectName}
    *
    * 로컬 모드 (GCS_BUCKET 미설정):
-   * - 저장 경로: /tmp/uploads/thumbnails
+   * - 저장 경로: ${UPLOADS_BASE_PATH}/thumbnails (기본값: /app/data/uploads/thumbnails)
    * - 반환 URL: /uploads/thumbnails/<filename>
-   * - 정적 서빙: main.ts에서 /uploads -> /tmp/uploads 연결
+   * - 정적 서빙: main.ts에서 /uploads -> ${UPLOADS_BASE_PATH} 연결
    *
    * @param file - 업로드된 파일 (Express.Multer.File)
    * @returns { thumbnailUrl: string; url: string } - 썸네일 URL (두 필드는 동일한 값)
@@ -96,17 +101,20 @@ export class UploadsService {
         throw new Error(`Failed to upload thumbnail to GCS: ${error.message}`);
       }
     } else {
-      // 로컬 /tmp 모드 (기존 동작)
-      const uploadsDir = path.join("/tmp", "uploads", "thumbnails");
-      await fs.promises.mkdir(uploadsDir, { recursive: true });
+      // 로컬 파일 시스템 모드
+      const thumbnailsDir = path.join(this.uploadsBasePath, "thumbnails");
+      await fs.promises.mkdir(thumbnailsDir, { recursive: true });
 
-      const filePath = path.join(uploadsDir, filename);
+      const filePath = path.join(thumbnailsDir, filename);
       await fs.promises.writeFile(filePath, file.buffer);
 
+      // 반환 URL은 항상 /uploads/thumbnails/<filename> 형식 유지
       const thumbnailUrl = `/uploads/thumbnails/${filename}`;
 
-      console.log(`[saveThumbnail] 로컬 파일 저장: ${filePath}`);
-      console.log(`[saveThumbnail] URL: ${thumbnailUrl}`);
+      console.log(`[saveThumbnail] 로컬 파일 저장`);
+      console.log(`[saveThumbnail] 실제 저장 경로: ${filePath}`);
+      console.log(`[saveThumbnail] 파일명: ${filename}`);
+      console.log(`[saveThumbnail] 반환 URL: ${thumbnailUrl}`);
 
       return { thumbnailUrl, url: thumbnailUrl };
     }
@@ -116,7 +124,7 @@ export class UploadsService {
    * 썸네일 파일 삭제
    *
    * GCS 모드: GCS URL인 경우 객체 삭제
-   * 로컬 모드: /tmp/uploads/thumbnails/ 파일 삭제
+   * 로컬 모드: ${UPLOADS_BASE_PATH}/thumbnails/ 파일 삭제
    *
    * @param thumbnailPathOrUrl - 삭제할 썸네일 경로 또는 URL
    * @returns { success: boolean } - 삭제 성공 여부
@@ -178,7 +186,7 @@ export class UploadsService {
         return { success: false };
       }
 
-      // 로컬 파일 경로 변환 (기존 동작)
+      // 로컬 파일 경로 변환
       let filename: string;
       if (thumbnailPathOrUrl.startsWith("/uploads/thumbnails/")) {
         filename = path.basename(thumbnailPathOrUrl);
@@ -191,7 +199,7 @@ export class UploadsService {
         filename = thumbnailPathOrUrl;
       }
 
-      const filePath = path.join("/tmp", "uploads", "thumbnails", filename);
+      const filePath = path.join(this.uploadsBasePath, "thumbnails", filename);
 
       if (fs.existsSync(filePath)) {
         await fs.promises.unlink(filePath);
