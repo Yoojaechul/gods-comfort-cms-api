@@ -8,9 +8,9 @@ export class UploadsService {
   /**
    * 썸네일 파일을 저장하고, CMS에서 바로 사용할 수 있는 상대경로 thumbnailUrl을 반환합니다.
    *
-   * ✅ Cloud Run 권장:
-   * - 저장 경로: /tmp/uploads/thumbnails (쓰기 가능)
-   * - 반환 URL:  /uploads/thumbnails/<filename> (정적서빙은 main.ts에서 /uploads -> /tmp/uploads 연결)
+   * ✅ 저장 경로: /tmp/uploads/thumbnails
+   * ✅ 반환 URL:  /uploads/thumbnails/<filename>
+   * ✅ 정적 서빙: main.ts에서 /uploads -> /tmp/uploads 연결
    *
    * @param file - 업로드된 파일 (Express.Multer.File)
    * @returns { thumbnailUrl: string } - 상대경로 썸네일 URL
@@ -19,7 +19,7 @@ export class UploadsService {
   async saveThumbnail(
     file: Express.Multer.File,
   ): Promise<{ thumbnailUrl: string }> {
-    // 1) 저장 디렉토리 생성 (Cloud Run 쓰기 가능 경로)
+    // 1) 저장 디렉토리 생성 (/tmp/uploads/thumbnails)
     const uploadsDir = path.join("/tmp", "uploads", "thumbnails");
     await fs.promises.mkdir(uploadsDir, { recursive: true });
 

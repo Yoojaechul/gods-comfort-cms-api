@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import * as express from 'express';
 import * as path from 'path';
+import * as fs from 'fs';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -9,15 +10,22 @@ async function bootstrap() {
   // Cloud Run 필수: PORT 환경변수 사용 (기본값: 8080)
   const port = process.env.PORT || 8080;
 
-  // 정적 파일 서빙: /uploads 경로로 uploads 폴더 서빙
-  // 저장 경로: process.cwd()/uploads/thumbnails/<filename>
+  // 정적 파일 서빙: /uploads 경로를 /tmp/uploads 디렉터리로 연결
+  // 저장 경로: /tmp/uploads/thumbnails/<filename>
   // 서빙 경로: /uploads/thumbnails/<filename>
   // 반환 URL: /uploads/thumbnails/<filename>
   const expressApp = app.getHttpAdapter().getInstance();
-  const uploadsBasePath = path.join(process.cwd(), 'uploads');
+  const uploadsBasePath = '/tmp/uploads';
   
-  // /uploads 경로로 정적 파일 서빙
-  // /uploads/thumbnails/<filename> 요청이 process.cwd()/uploads/thumbnails/<filename> 파일로 매핑됨
+  // /tmp/uploads/thumbnails 폴더가 없으면 자동 생성 (방어 코드)
+  try {
+    await fs.promises.mkdir(path.join(uploadsBasePath, 'thumbnails'), { recursive: true });
+  } catch (error: any) {
+    console.warn(`⚠️ Failed to create uploads directory: ${error.message}`);
+  }
+  
+  // /uploads 경로로 정적 파일 서빙 (라우터보다 먼저 실행되도록 설정)
+  // /uploads/thumbnails/<filename> 요청이 /tmp/uploads/thumbnails/<filename> 파일로 매핑됨
   expressApp.use('/uploads', express.static(uploadsBasePath, {
     setHeaders: (res, filePath) => {
       // 파일 확장자에 따라 Content-Type 설정
