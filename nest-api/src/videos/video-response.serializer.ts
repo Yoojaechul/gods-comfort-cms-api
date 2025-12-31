@@ -89,7 +89,8 @@ export function normalizeVideoResponse(video: any): NormalizedVideoResponse {
     youtube_id: videoId,
     source_url: resolvedSourceUrl,
     url: resolvedUrl,
-    // Platform-specific URL fields
+    // Platform-specific URL fields (명시적으로 포함)
+    youtube_url: youtubeUrl || (video.platform === 'youtube' ? resolvedSourceUrl : null),
     facebook_url: facebookUrl || (video.platform === 'facebook' ? resolvedSourceUrl : null),
   };
 

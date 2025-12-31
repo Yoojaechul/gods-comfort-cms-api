@@ -541,7 +541,13 @@ export class VideosService {
     userSiteId: string,
     dto: {
       sourceType: string;
-      sourceUrl: string;
+      sourceUrl?: string;
+      source_url?: string;
+      url?: string;
+      youtubeUrl?: string;
+      youtube_url?: string;
+      facebookUrl?: string;
+      facebook_url?: string;
       title?: string;
       thumbnailUrl?: string;
       language?: string;
@@ -561,6 +567,24 @@ export class VideosService {
       });
     }
 
+    // 다양한 키에서 URL 추출 (우선순위: platform별 키 > sourceUrl/source_url > url)
+    let inputUrl: string | null = null;
+    if (sourceType === 'youtube') {
+      inputUrl = dto.youtube_url || dto.youtubeUrl || dto.sourceUrl || dto.source_url || dto.url || null;
+    } else if (sourceType === 'facebook') {
+      inputUrl = dto.facebook_url || dto.facebookUrl || dto.sourceUrl || dto.source_url || dto.url || null;
+    }
+
+    // URL 필수 검증
+    if (!inputUrl || typeof inputUrl !== 'string' || inputUrl.trim() === '') {
+      throw new BadRequestException({
+        message: 'URL is required. Provide one of: youtube_url, youtubeUrl, facebook_url, facebookUrl, sourceUrl, source_url, or url',
+        error: 'Bad Request',
+      });
+    }
+
+    inputUrl = inputUrl.trim();
+
     // site_id 결정 (Creator는 자신의 site_id, Admin은 body에서 받거나 user.site_id)
     let siteId: string;
     if (userRole === 'admin') {
@@ -575,11 +599,27 @@ export class VideosService {
     // video_id 추출
     let extractedVideoId: string | null = null;
     if (platform === 'youtube') {
-      extractedVideoId = this.extractYouTubeVideoId(dto.sourceUrl);
+      extractedVideoId = this.extractYouTubeVideoId(inputUrl);
     } else if (platform === 'facebook') {
       // Facebook video ID 추출
-      const match = dto.sourceUrl.match(/\/videos\/(\d+)/);
+      const match = inputUrl.match(/\/videos\/(\d+)/);
       extractedVideoId = match ? match[1] : null;
+    }
+
+    // platform에 따라 URL 강제 매핑
+    let youtubeUrl: string | null = null;
+    let facebookUrl: string | null = null;
+    let sourceUrl: string | null = null;
+    let url: string | null = null;
+
+    if (platform === 'youtube') {
+      youtubeUrl = inputUrl;
+      sourceUrl = inputUrl; // source_url = youtube_url
+      url = inputUrl; // url = source_url
+    } else if (platform === 'facebook') {
+      facebookUrl = inputUrl;
+      sourceUrl = inputUrl; // source_url = facebook_url
+      url = inputUrl; // url = source_url
     }
 
     // 기타 필드
@@ -594,7 +634,7 @@ export class VideosService {
     if (platform === 'youtube' && extractedVideoId) {
       embedUrl = `https://www.youtube.com/embed/${extractedVideoId}`;
     } else if (platform === 'facebook' && extractedVideoId) {
-      embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(dto.sourceUrl)}`;
+      embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(inputUrl)}`;
     }
 
     // YouTube 썸네일 자동 생성 (썸네일이 없고 video_id가 있는 경우)
@@ -642,17 +682,23 @@ export class VideosService {
 
       if (columnNames.includes('youtube_url')) {
         insertColumns.push('youtube_url');
-        insertValues.push(platform === 'youtube' ? dto.sourceUrl : null);
+        insertValues.push(youtubeUrl);
       }
 
       if (columnNames.includes('facebook_url')) {
         insertColumns.push('facebook_url');
-        insertValues.push(platform === 'facebook' ? dto.sourceUrl : null);
+        insertValues.push(facebookUrl);
       }
 
       if (columnNames.includes('source_url')) {
         insertColumns.push('source_url');
-        insertValues.push(dto.sourceUrl);
+        insertValues.push(sourceUrl);
+      }
+
+      // url 컬럼이 있으면 추가 (하위 호환성)
+      if (columnNames.includes('url')) {
+        insertColumns.push('url');
+        insertValues.push(url);
       }
 
       insertColumns.push('title');
@@ -719,6 +765,301 @@ export class VideosService {
       this.logger.error(`[createCreatorVideo] Error: ${error.message}`);
       throw new InternalServerErrorException({
         message: '영상 생성 중 오류가 발생했습니다.',
+        error: 'Internal Server Error',
+        details: error.message,
+      });
+    }
+  }
+
+  /**
+   * Creator 영상 수정
+   * @param userId 사용자 ID (JWT에서 추출)
+   * @param userRole 사용자 역할 (creator 또는 admin)
+   * @param userSiteId 사용자의 site_id
+   * @param videoIdOrManagementId 영상 ID 또는 management_id
+   * @param dto 영상 수정 DTO
+   * @returns 수정된 영상 정보
+   */
+  async updateCreatorVideo(
+    userId: string,
+    userRole: string,
+    userSiteId: string,
+    videoIdOrManagementId: string,
+    dto: {
+      sourceType?: string;
+      sourceUrl?: string;
+      source_url?: string;
+      url?: string;
+      youtubeUrl?: string;
+      youtube_url?: string;
+      facebookUrl?: string;
+      facebook_url?: string;
+      title?: string;
+      thumbnailUrl?: string;
+      language?: string;
+      status?: string;
+      visibility?: string;
+      site_id?: string;
+    },
+  ): Promise<any> {
+    const db = this.databaseService.getDb();
+
+    try {
+      // 컬럼 존재 여부 확인
+      const cols = db.prepare(`PRAGMA table_info(videos)`).all() as Array<{ name: string }>;
+      const columnNames = cols.map((c) => c.name);
+      
+      const hasCreatorId = columnNames.includes('creator_id');
+      const hasOwnerId = columnNames.includes('owner_id');
+      const hasCreatedBy = columnNames.includes('created_by');
+      const hasSiteId = columnNames.includes('site_id');
+      
+      // creator_id, owner_id 또는 created_by 컬럼 중 하나는 반드시 있어야 함
+      if (!hasCreatorId && !hasOwnerId && !hasCreatedBy) {
+        throw new NotFoundException('Video not found');
+      }
+      
+      // 우선순위: creator_id > owner_id > created_by
+      const ownerColumn = hasCreatorId ? 'creator_id' : (hasOwnerId ? 'owner_id' : 'created_by');
+      
+      // management_id 형식인지 확인 (YYMMDD-NN 형식)
+      const isManagementId = /^\d{6}-\d{2}$/.test(videoIdOrManagementId);
+      
+      let existingVideo: any;
+      if (isManagementId) {
+        // management_id로 조회
+        if (hasSiteId) {
+          existingVideo = db
+            .prepare(`SELECT * FROM videos WHERE management_id = ? AND site_id = ? AND ${ownerColumn} = ?`)
+            .get(videoIdOrManagementId, userSiteId || 'gods', userId) as any;
+        } else {
+          existingVideo = db
+            .prepare(`SELECT * FROM videos WHERE management_id = ? AND ${ownerColumn} = ?`)
+            .get(videoIdOrManagementId, userId) as any;
+        }
+      } else {
+        // id로 조회
+        if (hasSiteId) {
+          existingVideo = db
+            .prepare(`SELECT * FROM videos WHERE id = ? AND site_id = ? AND ${ownerColumn} = ?`)
+            .get(videoIdOrManagementId, userSiteId || 'gods', userId) as any;
+        } else {
+          existingVideo = db
+            .prepare(`SELECT * FROM videos WHERE id = ? AND ${ownerColumn} = ?`)
+            .get(videoIdOrManagementId, userId) as any;
+        }
+      }
+      
+      if (!existingVideo) {
+        throw new NotFoundException('Video not found');
+      }
+
+      // sourceType이 변경되면 platform도 변경
+      let platform = existingVideo.platform;
+      if (dto.sourceType) {
+        const sourceType = dto.sourceType.toLowerCase();
+        if (sourceType !== 'youtube' && sourceType !== 'facebook') {
+          throw new BadRequestException({
+            message: "sourceType must be 'youtube' or 'facebook'",
+            error: 'Bad Request',
+          });
+        }
+        platform = sourceType === 'youtube' ? 'youtube' : 'facebook';
+      }
+
+      // URL 처리: URL이 제공되면 platform에 따라 매핑
+      let youtubeUrl: string | null = existingVideo.youtube_url || null;
+      let facebookUrl: string | null = existingVideo.facebook_url || null;
+      let sourceUrl: string | null = existingVideo.source_url || null;
+      let url: string | null = existingVideo.url || null;
+      let extractedVideoId: string | null = existingVideo.video_id || null;
+      let embedUrl: string | null = existingVideo.embed_url || null;
+
+      // URL이 업데이트되는 경우
+      if (dto.youtube_url || dto.youtubeUrl || dto.facebook_url || dto.facebookUrl || dto.sourceUrl || dto.source_url || dto.url) {
+        let inputUrl: string | null = null;
+        if (platform === 'youtube') {
+          inputUrl = dto.youtube_url || dto.youtubeUrl || dto.sourceUrl || dto.source_url || dto.url || null;
+        } else if (platform === 'facebook') {
+          inputUrl = dto.facebook_url || dto.facebookUrl || dto.sourceUrl || dto.source_url || dto.url || null;
+        }
+
+        if (inputUrl && typeof inputUrl === 'string' && inputUrl.trim() !== '') {
+          inputUrl = inputUrl.trim();
+
+          // platform에 따라 URL 강제 매핑
+          if (platform === 'youtube') {
+            youtubeUrl = inputUrl;
+            sourceUrl = inputUrl; // source_url = youtube_url
+            url = inputUrl; // url = source_url
+            facebookUrl = null;
+          } else if (platform === 'facebook') {
+            facebookUrl = inputUrl;
+            sourceUrl = inputUrl; // source_url = facebook_url
+            url = inputUrl; // url = source_url
+            youtubeUrl = null;
+          }
+
+          // video_id 추출
+          if (platform === 'youtube') {
+            extractedVideoId = this.extractYouTubeVideoId(inputUrl);
+          } else if (platform === 'facebook') {
+            const match = inputUrl.match(/\/videos\/(\d+)/);
+            extractedVideoId = match ? match[1] : null;
+          }
+
+          // embed_url 생성
+          if (platform === 'youtube' && extractedVideoId) {
+            embedUrl = `https://www.youtube.com/embed/${extractedVideoId}`;
+          } else if (platform === 'facebook' && extractedVideoId) {
+            embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(inputUrl)}`;
+          }
+        }
+      }
+
+      // 기타 필드 업데이트
+      const title = dto.title !== undefined ? (dto.title?.trim() || null) : existingVideo.title;
+      const thumbnailUrl = dto.thumbnailUrl !== undefined ? (dto.thumbnailUrl?.trim() || null) : existingVideo.thumbnail_url;
+      const language = dto.language || existingVideo.language || 'en';
+      const status = dto.status || existingVideo.status || 'active';
+      const visibility = dto.visibility || existingVideo.visibility || 'public';
+
+      // YouTube 썸네일 자동 생성 (썸네일이 없고 video_id가 있는 경우)
+      let finalThumbnailUrl = thumbnailUrl;
+      if (!finalThumbnailUrl && platform === 'youtube' && extractedVideoId) {
+        finalThumbnailUrl = `https://img.youtube.com/vi/${extractedVideoId}/maxresdefault.jpg`;
+      }
+
+      // site_id 결정 (Creator는 자신의 site_id, Admin은 body에서 받거나 user.site_id)
+      let siteId: string;
+      if (userRole === 'admin' && dto.site_id) {
+        siteId = dto.site_id.toString();
+      } else {
+        siteId = (userSiteId || existingVideo.site_id || 'gods').toString();
+      }
+
+      // UPDATE 쿼리 생성
+      const updateColumns: string[] = [];
+      const updateValues: any[] = [];
+
+      if (dto.sourceType !== undefined || dto.youtube_url || dto.youtubeUrl || dto.facebook_url || dto.facebookUrl || dto.sourceUrl || dto.source_url || dto.url) {
+        updateColumns.push('platform');
+        updateValues.push(platform);
+
+        updateColumns.push('video_id');
+        updateValues.push(extractedVideoId);
+      }
+
+      if (columnNames.includes('youtube_url') && (dto.sourceType !== undefined || dto.youtube_url || dto.youtubeUrl || dto.sourceUrl || dto.source_url || dto.url)) {
+        updateColumns.push('youtube_url');
+        updateValues.push(youtubeUrl);
+      }
+
+      if (columnNames.includes('facebook_url') && (dto.sourceType !== undefined || dto.facebook_url || dto.facebookUrl || dto.sourceUrl || dto.source_url || dto.url)) {
+        updateColumns.push('facebook_url');
+        updateValues.push(facebookUrl);
+      }
+
+      if (columnNames.includes('source_url') && (dto.sourceType !== undefined || dto.sourceUrl || dto.source_url || dto.url || dto.youtube_url || dto.youtubeUrl || dto.facebook_url || dto.facebookUrl)) {
+        updateColumns.push('source_url');
+        updateValues.push(sourceUrl);
+      }
+
+      if (columnNames.includes('url') && (dto.sourceType !== undefined || dto.url || dto.sourceUrl || dto.source_url || dto.youtube_url || dto.youtubeUrl || dto.facebook_url || dto.facebookUrl)) {
+        updateColumns.push('url');
+        updateValues.push(url);
+      }
+
+      if (dto.title !== undefined) {
+        updateColumns.push('title');
+        updateValues.push(title);
+      }
+
+      if (dto.thumbnailUrl !== undefined || (!thumbnailUrl && platform === 'youtube' && extractedVideoId)) {
+        updateColumns.push('thumbnail_url');
+        updateValues.push(finalThumbnailUrl);
+      }
+
+      if (columnNames.includes('embed_url') && (dto.sourceType !== undefined || dto.youtube_url || dto.youtubeUrl || dto.facebook_url || dto.facebookUrl || dto.sourceUrl || dto.source_url || dto.url)) {
+        updateColumns.push('embed_url');
+        updateValues.push(embedUrl);
+      }
+
+      if (dto.language !== undefined) {
+        updateColumns.push('language');
+        updateValues.push(language);
+      }
+
+      if (dto.status !== undefined) {
+        updateColumns.push('status');
+        updateValues.push(status);
+      }
+
+      if (dto.visibility !== undefined) {
+        updateColumns.push('visibility');
+        updateValues.push(visibility);
+      }
+
+      if (hasSiteId && (userRole === 'admin' && dto.site_id !== undefined)) {
+        updateColumns.push('site_id');
+        updateValues.push(siteId);
+      }
+
+      updateColumns.push('updated_at');
+      updateValues.push(new Date().toISOString());
+
+      if (updateColumns.length === 0) {
+        // 업데이트할 내용이 없으면 기존 영상 반환
+        return { video: normalizeVideoResponse(existingVideo) };
+      }
+
+      // WHERE 조건
+      const whereCondition = isManagementId 
+        ? (hasSiteId ? 'management_id = ? AND site_id = ? AND ' + ownerColumn + ' = ?' : 'management_id = ? AND ' + ownerColumn + ' = ?')
+        : (hasSiteId ? 'id = ? AND site_id = ? AND ' + ownerColumn + ' = ?' : 'id = ? AND ' + ownerColumn + ' = ?');
+      
+      const whereParams = isManagementId
+        ? (hasSiteId ? [videoIdOrManagementId, userSiteId || 'gods', userId] : [videoIdOrManagementId, userId])
+        : (hasSiteId ? [videoIdOrManagementId, userSiteId || 'gods', userId] : [videoIdOrManagementId, userId]);
+
+      const setClause = updateColumns.map(col => `${col} = ?`).join(', ');
+      const sql = `UPDATE videos SET ${setClause} WHERE ${whereCondition}`;
+      
+      updateValues.push(...whereParams);
+      db.prepare(sql).run(...updateValues);
+
+      // 수정된 영상 조회
+      const updatedVideo = db
+        .prepare(`SELECT * FROM videos WHERE ${isManagementId ? 'management_id' : 'id'} = ?`)
+        .get(videoIdOrManagementId) as any;
+
+      if (!updatedVideo) {
+        throw new NotFoundException('Video not found after update');
+      }
+
+      // Normalize video response with backward-compatible fields
+      const video = normalizeVideoResponse(updatedVideo);
+
+      // Runtime validation
+      const validation = validateVideoResponse(video);
+      if (!validation.valid) {
+        this.logger.warn(
+          `[updateCreatorVideo] Updated video missing fields: ${validation.missingFields.join(', ')}`,
+        );
+      }
+
+      this.logger.log(
+        `[updateCreatorVideo] Video updated: ${isManagementId ? 'management_id' : 'id'}=${videoIdOrManagementId}, title=${title?.substring(0, 30) || 'N/A'}`,
+      );
+
+      return { video };
+    } catch (error: any) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      this.logger.error(`[updateCreatorVideo] Error: ${error.message}`);
+      throw new InternalServerErrorException({
+        message: '영상 수정 중 오류가 발생했습니다.',
         error: 'Internal Server Error',
         details: error.message,
       });

@@ -12,13 +12,61 @@ export class CreateVideoDto {
   @IsIn(['youtube', 'facebook'])
   sourceType: string;
 
-  @ApiProperty({
-    description: '영상 소스 URL',
+  @ApiPropertyOptional({
+    description: '영상 소스 URL (다양한 키로 받을 수 있음: sourceUrl, source_url, url, youtubeUrl, youtube_url, facebookUrl, facebook_url)',
     example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
   })
   @IsString()
-  @IsNotEmpty()
-  sourceUrl: string;
+  @IsOptional()
+  sourceUrl?: string;
+
+  @ApiPropertyOptional({
+    description: '영상 소스 URL (camelCase)',
+    example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  })
+  @IsString()
+  @IsOptional()
+  source_url?: string;
+
+  @ApiPropertyOptional({
+    description: '영상 URL',
+    example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  })
+  @IsString()
+  @IsOptional()
+  url?: string;
+
+  @ApiPropertyOptional({
+    description: 'YouTube URL (camelCase)',
+    example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  })
+  @IsString()
+  @IsOptional()
+  youtubeUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'YouTube URL (snake_case)',
+    example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  })
+  @IsString()
+  @IsOptional()
+  youtube_url?: string;
+
+  @ApiPropertyOptional({
+    description: 'Facebook URL (camelCase)',
+    example: 'https://www.facebook.com/videos/123456789',
+  })
+  @IsString()
+  @IsOptional()
+  facebookUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Facebook URL (snake_case)',
+    example: 'https://www.facebook.com/videos/123456789',
+  })
+  @IsString()
+  @IsOptional()
+  facebook_url?: string;
 
   @ApiPropertyOptional({
     description: '영상 제목',

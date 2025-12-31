@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Query,
   Body,
   Param,
@@ -24,6 +25,7 @@ import {
   VideoMetadataResponseDto,
 } from './dto/video-metadata.dto';
 import { CreateVideoDto } from './dto/create-video.dto';
+import { UpdateVideoDto } from './dto/update-video.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('videos')
@@ -225,10 +227,21 @@ export class CreatorVideosController {
       throw new ForbiddenException('Only creator and admin can create videos');
     }
 
-    // 필수 필드 검증
-    if (!dto.sourceType || !dto.sourceUrl) {
+    // 필수 필드 검증 (sourceType은 필수, URL은 다양한 키로 받을 수 있음)
+    if (!dto.sourceType) {
       throw new BadRequestException({
-        message: 'sourceType and sourceUrl are required',
+        message: 'sourceType is required',
+        error: 'Bad Request',
+      });
+    }
+
+    // URL이 하나라도 있는지 확인
+    const hasUrl = !!(dto.sourceUrl || dto.source_url || dto.url || 
+                     dto.youtubeUrl || dto.youtube_url || 
+                     dto.facebookUrl || dto.facebook_url);
+    if (!hasUrl) {
+      throw new BadRequestException({
+        message: 'URL is required. Provide one of: youtube_url, youtubeUrl, facebook_url, facebookUrl, sourceUrl, source_url, or url',
         error: 'Bad Request',
       });
     }
@@ -237,6 +250,81 @@ export class CreatorVideosController {
       user.id,
       user.role,
       user.site_id || 'gods',
+      dto,
+    );
+  }
+
+  /**
+   * Creator 영상 수정
+   * JWT 인증 필요 (creator/admin)
+   */
+  @Put('videos/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Creator 영상 수정' })
+  @ApiParam({
+    name: 'id',
+    description: '영상 ID 또는 management_id (YYMMDD-NN 형식)',
+  })
+  @ApiQuery({
+    name: 'site_id',
+    required: false,
+    description: '사이트 ID (선택적, JWT에서 가져온 값 사용)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '영상 수정 성공',
+    schema: {
+      example: {
+        video: {
+          id: 'abc123def456...',
+          site_id: 'gods',
+          creator_id: 'creator-001',
+          platform: 'youtube',
+          video_id: 'dQw4w9WgXcQ',
+          youtube_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          source_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          title: '샘플 영상',
+          thumbnail_url: 'https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg',
+          embed_url: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+          language: 'ko',
+          status: 'active',
+          visibility: 'public',
+          updated_at: '2025-01-15T10:00:00.000Z',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: '잘못된 요청' })
+  @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
+  @ApiResponse({ status: 403, description: 'Creator 또는 Admin 역할이 아님' })
+  @ApiResponse({ status: 404, description: '영상을 찾을 수 없음' })
+  async updateCreatorVideo(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateVideoDto,
+    @Query('site_id') siteId?: string,
+  ) {
+    const user = req.user;
+
+    // role 검증 (creator 또는 admin만 가능)
+    if (user.role !== 'creator' && user.role !== 'admin') {
+      throw new ForbiddenException('Only creator and admin can update videos');
+    }
+
+    const targetSiteId = siteId || user.site_id || null;
+
+    // Creator는 자신의 site_id만 접근 가능
+    if (user.role === 'creator' && targetSiteId !== user.site_id) {
+      throw new ForbiddenException('Access denied to this site_id');
+    }
+
+    return this.videosService.updateCreatorVideo(
+      user.id,
+      user.role,
+      targetSiteId || 'gods',
+      id,
       dto,
     );
   }

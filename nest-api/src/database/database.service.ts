@@ -126,6 +126,8 @@ export class DatabaseService implements OnModuleInit {
           creator_id TEXT,
           video_id TEXT,
           youtube_url TEXT,
+          facebook_url TEXT,
+          source_url TEXT,
           thumbnail_url TEXT,
           title TEXT,
           platform TEXT,
@@ -143,12 +145,15 @@ export class DatabaseService implements OnModuleInit {
       const columnNames = cols.map((c) => c.name);
 
       // 필수 컬럼 목록 (존재하지 않으면 추가)
+      // 운영/개발 DB 마이그레이션 안전장치: youtube_url, facebook_url, source_url 자동 추가
       const requiredColumns = [
         { name: 'management_id', type: 'TEXT' },
         { name: 'owner_id', type: 'TEXT' },  // 기존 코드 호환
         { name: 'creator_id', type: 'TEXT' },  // 향후 통일용
         { name: 'video_id', type: 'TEXT' },
         { name: 'youtube_url', type: 'TEXT' },
+        { name: 'facebook_url', type: 'TEXT' },
+        { name: 'source_url', type: 'TEXT' },
         { name: 'thumbnail_url', type: 'TEXT' },
         { name: 'title', type: 'TEXT' },
         { name: 'platform', type: 'TEXT' },
