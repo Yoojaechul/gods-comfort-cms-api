@@ -177,3 +177,8 @@ curl -X POST http://localhost:8080/uploads/thumbnail \
 - [Cloud Run 서비스 계정](https://cloud.google.com/run/docs/securing/service-identity)
 - [GCS 버킷 권한 설정](https://cloud.google.com/storage/docs/access-control/making-data-public)
 
+
+
+
+
+

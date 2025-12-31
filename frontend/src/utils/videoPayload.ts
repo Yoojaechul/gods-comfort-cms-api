@@ -105,6 +105,13 @@ export function buildVideoPayload(input: VideoPayloadInput): VideoPayload {
     if (youtubeId) {
       payload.youtubeId = youtubeId;
     }
+    // YouTube URL 필드 추가
+    payload.youtube_url = input.sourceUrl.trim();
+  }
+
+  // Facebook videoType일 때 facebook_url 필드 추가
+  if (videoType === "facebook" && input.sourceUrl) {
+    payload.facebook_url = input.sourceUrl.trim();
   }
 
   // 선택적 필드들 추가 (값이 있을 때만)

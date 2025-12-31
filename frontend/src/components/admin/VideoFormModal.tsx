@@ -59,18 +59,35 @@ export default function VideoFormModal({
   // edit 초기 로드
   useEffect(() => {
     if (initialVideo && mode === "edit") {
+      const sourceType =
+        (initialVideo as any).sourceType ||
+        ((initialVideo as any).video_type === "facebook" ? "facebook" : "youtube");
+      
+      // 플랫폼에 따라 적절한 URL 필드에서 값 가져오기
+      let sourceUrl = "";
+      if (sourceType === "facebook") {
+        sourceUrl =
+          (initialVideo as any).facebook_url ||
+          (initialVideo as any).url ||
+          (initialVideo as any).sourceUrl ||
+          (initialVideo as any).source_url ||
+          "";
+      } else {
+        // YouTube
+        sourceUrl =
+          (initialVideo as any).youtube_url ||
+          (initialVideo as any).sourceUrl ||
+          (initialVideo as any).source_url ||
+          (initialVideo as any).youtube_id ||
+          "";
+      }
+
       setFormData({
         title: initialVideo.title || "",
         description: initialVideo.description || "",
         creatorName: initialVideo.creatorName || "",
-        sourceType:
-          (initialVideo as any).sourceType ||
-          ((initialVideo as any).video_type === "facebook" ? "facebook" : "youtube"),
-        sourceUrl:
-          (initialVideo as any).sourceUrl ||
-          (initialVideo as any).source_url ||
-          (initialVideo as any).youtube_id ||
-          "",
+        sourceType,
+        sourceUrl,
         thumbnailUrl:
           (initialVideo as any).thumbnailUrl ||
           (initialVideo as any).thumbnail_url ||
@@ -256,9 +273,15 @@ export default function VideoFormModal({
       payload.thumbnail_url = finalThumbnailUrl;
       payload.source_url = sourceUrl;
 
-      if (payload.videoType === "youtube" && sourceUrl && !payload.youtubeId) {
-        const youtubeId = extractYoutubeId(sourceUrl);
-        if (youtubeId) payload.youtubeId = youtubeId;
+      // 플랫폼에 따라 적절한 URL 필드 설정
+      if (isYouTube) {
+        payload.youtube_url = sourceUrl;
+        if (sourceUrl && !payload.youtubeId) {
+          const youtubeId = extractYoutubeId(sourceUrl);
+          if (youtubeId) payload.youtubeId = youtubeId;
+        }
+      } else if (isFacebook) {
+        payload.facebook_url = sourceUrl;
       }
 
       if (mode === "edit" && userRole === "admin") {

@@ -270,11 +270,21 @@ export default function VideoTable({
 
     // ✅ YouTube는 popup에 iframe로 재생
     if (platform === "youtube" || platform.toLowerCase().includes("youtube")) {
-      // 우선순위에 따라 YouTube ID 추출
-      const youtubeId = extractYouTubeIdFromVideo(video);
+      // youtube_url 필드 우선 확인
+      const youtubeUrl = (video as any).youtube_url;
+      let youtubeId: string | null = null;
+      
+      if (youtubeUrl) {
+        youtubeId = extractYoutubeId(youtubeUrl);
+      }
+      
+      // youtube_url에서 찾지 못하면 기존 로직 사용
+      if (!youtubeId) {
+        youtubeId = extractYouTubeIdFromVideo(video);
+      }
 
       if (!youtubeId) {
-        alert("YouTube ID를 찾을 수 없습니다. source_url/youtube_id를 확인해 주세요.");
+        alert("YouTube ID를 찾을 수 없습니다. youtube_url/source_url/youtube_id를 확인해 주세요.");
         return;
       }
 
@@ -282,8 +292,24 @@ export default function VideoTable({
       return;
     }
 
-    // ✅ Facebook/기타는 URL 그대로 새 창
-    const sourceUrl = video.sourceUrl || (video as any).source_url || (video as any).facebook_url || "";
+    // ✅ Facebook은 facebook_url 우선, 없으면 url 또는 source_url 사용
+    if (platform === "facebook" || platform.toLowerCase().includes("facebook")) {
+      const sourceUrl =
+        (video as any).facebook_url ||
+        (video as any).url ||
+        video.sourceUrl ||
+        (video as any).source_url ||
+        "";
+      if (sourceUrl && String(sourceUrl).trim() !== "") {
+        window.open(sourceUrl, "_blank", "width=980,height=580,noopener,noreferrer");
+        return;
+      }
+      alert("미리보기 URL을 찾을 수 없습니다.");
+      return;
+    }
+
+    // ✅ 기타 플랫폼은 URL 그대로 새 창
+    const sourceUrl = video.sourceUrl || (video as any).source_url || "";
     if (sourceUrl && String(sourceUrl).trim() !== "") {
       window.open(sourceUrl, "_blank", "width=980,height=580,noopener,noreferrer");
       return;
@@ -455,5 +481,6 @@ export default function VideoTable({
     </>
   );
 }
+
 
 

@@ -25,6 +25,7 @@ export interface NormalizedVideoResponse {
   // Original fields (preserved)
   video_id?: string | null;
   youtube_url?: string | null;
+  facebook_url?: string | null; // Facebook video URL
   site_id?: string | null;
   creator_id?: string | null;
   owner_id?: string | null;
@@ -47,8 +48,29 @@ export function normalizeVideoResponse(video: any): NormalizedVideoResponse {
   const videoId = video.video_id || null;
   const youtubeUrl = video.youtube_url || null;
   const sourceUrl = video.source_url || null;
+  const facebookUrl = video.facebook_url || null;
   const viewCount = video.view_count ?? video.views ?? 0;
-  const url = video.url || youtubeUrl || sourceUrl || null; // url이 null이면 youtube_url로 채움
+  
+  // Collect all possible URL fields (platform-agnostic)
+  // Check all possible URL fields that might contain the video URL
+  const allPossibleUrls = [
+    video.url,
+    youtubeUrl,
+    sourceUrl,
+    facebookUrl,
+    video.embed_url,
+  ].filter((url): url is string => url != null && typeof url === 'string' && url.trim() !== '');
+  
+  // Resolve url field: prefer youtube_url for YouTube (backward compatibility),
+  // otherwise use any available URL (source_url for Facebook, etc.)
+  // This ensures url is never null if any URL field exists in DB
+  const resolvedUrl = youtubeUrl || allPossibleUrls[0] || null;
+  
+  // Resolve source_url field: prefer youtube_url for YouTube (backward compatibility),
+  // then source_url, then facebook_url, then any other available URL
+  // This ensures source_url is never null if any URL field exists in DB
+  // For Facebook videos, source_url should contain the Facebook URL
+  const resolvedSourceUrl = youtubeUrl || sourceUrl || facebookUrl || allPossibleUrls[0] || null;
 
   // Build normalized response
   const normalized: NormalizedVideoResponse = {
@@ -65,8 +87,10 @@ export function normalizeVideoResponse(video: any): NormalizedVideoResponse {
     updated_at: video.updated_at || null,
     // Backward-compatible aliases
     youtube_id: videoId,
-    source_url: youtubeUrl || sourceUrl || null,
-    url: url, // url이 null이면 youtube_url로 채움
+    source_url: resolvedSourceUrl,
+    url: resolvedUrl,
+    // Platform-specific URL fields
+    facebook_url: facebookUrl || (video.platform === 'facebook' ? resolvedSourceUrl : null),
   };
 
   return normalized;
@@ -114,4 +138,5 @@ export function validateVideoResponse(video: any): {
     missingFields,
   };
 }
+
 

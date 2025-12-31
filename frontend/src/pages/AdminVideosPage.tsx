@@ -783,20 +783,46 @@ export default function AdminVideosPage({ role = "admin" }: VideosPageProps) {
       </div>
 
       {/* 영상 미리보기 모달 (VideoPreviewModal 사용) */}
-      {modalVideo && (
-        <VideoPreviewModal
-          video={{
-            id: modalVideo.id,
-            title: modalVideo.title || "",
-            video_type: (modalVideo.sourceType || (modalVideo as any).video_type || "youtube") as "youtube" | "facebook" | "file",
-            youtube_id: (modalVideo as any).youtube_id,
-            facebook_url: (modalVideo as any).facebook_url || modalVideo.videoUrl || (modalVideo as any).sourceUrl || (modalVideo as any).source_url,
-            sourceUrl: modalVideo.videoUrl || (modalVideo as any).sourceUrl || (modalVideo as any).source_url,
-            sourceType: modalVideo.sourceType || (modalVideo as any).video_type,
-          }}
-          onClose={handleCloseModal}
-        />
-      )}
+      {modalVideo && (() => {
+        const platform = (modalVideo.sourceType || (modalVideo as any).video_type || (modalVideo as any).platform || "youtube").toLowerCase();
+        const isYouTube = platform === "youtube";
+        const isFacebook = platform === "facebook";
+        
+        // 플랫폼에 따라 올바른 URL 필드 선택
+        let url: string | undefined;
+        let youtubeId: string | undefined;
+        
+        if (isYouTube) {
+          // YouTube: youtube_url 우선, 없으면 source_url, sourceUrl 사용
+          url = (modalVideo as any).youtube_url || 
+                (modalVideo as any).source_url || 
+                modalVideo.sourceUrl || 
+                (modalVideo as any).url;
+          youtubeId = (modalVideo as any).youtube_id || (modalVideo as any).video_id;
+        } else if (isFacebook) {
+          // Facebook: facebook_url 우선, 없으면 source_url, sourceUrl 사용
+          url = (modalVideo as any).facebook_url || 
+                (modalVideo as any).source_url || 
+                modalVideo.sourceUrl || 
+                (modalVideo as any).url;
+        } else {
+          // 기타: source_url, sourceUrl 사용
+          url = (modalVideo as any).source_url || 
+                modalVideo.sourceUrl || 
+                (modalVideo as any).url;
+        }
+        
+        return (
+          <VideoPreviewModal
+            isOpen={!!modalVideo}
+            onClose={handleCloseModal}
+            url={url}
+            youtubeId={youtubeId}
+            platform={platform}
+            title={modalVideo.title || ""}
+          />
+        );
+      })()}
 
       {/* 영상 추가/편집 모달 */}
       {showVideoFormModal && (

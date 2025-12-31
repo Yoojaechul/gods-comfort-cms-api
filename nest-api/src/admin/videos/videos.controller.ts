@@ -197,11 +197,13 @@ export class AdminVideosController {
 
       if (thumb && typeof thumb === 'string') {
         // GCS URL 또는 상대 경로 모두 처리
-        const result = await this.uploadsService.deleteThumbnail(thumb);
-        if (result.success) {
-          console.log(`✅ Deleted thumbnail from GCS: ${thumb}`);
-        } else {
-          console.warn(`⚠️ Failed to delete thumbnail from GCS: ${thumb}`);
+        if (typeof this.uploadsService.deleteThumbnail === 'function') {
+          const result = await this.uploadsService.deleteThumbnail(thumb);
+          if (result.success) {
+            console.log(`✅ Deleted thumbnail from GCS: ${thumb}`);
+          } else {
+            console.warn(`⚠️ Failed to delete thumbnail from GCS: ${thumb}`);
+          }
         }
       }
     } catch (e) {

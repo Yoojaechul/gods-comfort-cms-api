@@ -645,6 +645,11 @@ export class VideosService {
         insertValues.push(platform === 'youtube' ? dto.sourceUrl : null);
       }
 
+      if (columnNames.includes('facebook_url')) {
+        insertColumns.push('facebook_url');
+        insertValues.push(platform === 'facebook' ? dto.sourceUrl : null);
+      }
+
       if (columnNames.includes('source_url')) {
         insertColumns.push('source_url');
         insertValues.push(dto.sourceUrl);
