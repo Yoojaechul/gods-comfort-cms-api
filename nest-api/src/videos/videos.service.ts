@@ -5,6 +5,7 @@ import {
   VideoMetadataResponseDto,
 } from './dto/video-metadata.dto';
 import { randomBytes } from 'crypto';
+import { normalizeVideoResponse, normalizeVideoListResponse, validateVideoResponse } from './video-response.serializer';
 
 @Injectable()
 export class VideosService {
@@ -145,17 +146,44 @@ export class VideosService {
   async getPublicVideos(options: {
     language?: string;
     platform?: string;
+    site_id?: string;
     limit: number;
   }): Promise<any[]> {
     const db = this.databaseService.getDb();
+    
+    // 컬럼 존재 여부 확인
+    const cols = db.prepare(`PRAGMA table_info(videos)`).all() as Array<{ name: string }>;
+    const columnNames = cols.map((c) => c.name);
+    const hasSiteId = columnNames.includes('site_id');
+    const hasStatus = columnNames.includes('status');
+    const hasPublished = columnNames.includes('published');
+    
     let query = "SELECT * FROM videos WHERE visibility = 'public'";
     const params: any[] = [];
 
+    // status 필터: active인 영상만 표시 (status 컬럼이 있는 경우)
+    if (hasStatus) {
+      query += " AND (status = 'active' OR status IS NULL)";
+    }
+
+    // published 필터: published가 true인 영상만 표시 (published 컬럼이 있는 경우)
+    if (hasPublished) {
+      query += ' AND (published = 1 OR published IS NULL)';
+    }
+
+    // site_id 필터
+    if (options.site_id && hasSiteId) {
+      query += ' AND site_id = ?';
+      params.push(options.site_id);
+    }
+
+    // language 필터
     if (options.language) {
       query += ' AND language = ?';
       params.push(options.language);
     }
 
+    // platform 필터
     if (options.platform) {
       query += ' AND platform = ?';
       params.push(options.platform);
@@ -164,7 +192,10 @@ export class VideosService {
     query += ' ORDER BY created_at DESC LIMIT ?';
     params.push(options.limit);
 
-    return db.prepare(query).all(...params) || [];
+    const rawVideos = db.prepare(query).all(...params) || [];
+    
+    // Normalize video responses with backward-compatible fields
+    return normalizeVideoListResponse(rawVideos);
   }
 
   /**
@@ -172,9 +203,91 @@ export class VideosService {
    */
   async getPublicVideoById(id: string): Promise<any | null> {
     const db = this.databaseService.getDb();
-    return db
+    const rawVideo = db
       .prepare("SELECT * FROM videos WHERE id = ? AND visibility = 'public'")
-      .get(id) as any || null;
+      .get(id) as any;
+    
+    if (!rawVideo) {
+      return null;
+    }
+
+    // Normalize video response with backward-compatible fields
+    return normalizeVideoResponse(rawVideo);
+  }
+
+  /**
+   * Creator 영상 단건 조회 (id 또는 management_id로 조회)
+   * creatorId와 site_id를 기반으로 자신의 영상만 반환
+   */
+  async getCreatorVideoById(
+    creatorId: string,
+    siteId: string | null,
+    idOrManagementId: string,
+  ): Promise<any> {
+    const db = this.databaseService.getDb();
+    
+    try {
+      // 컬럼 존재 여부 확인
+      const cols = db.prepare(`PRAGMA table_info(videos)`).all() as Array<{ name: string }>;
+      const columnNames = cols.map((c) => c.name);
+      
+      const hasCreatorId = columnNames.includes('creator_id');
+      const hasOwnerId = columnNames.includes('owner_id');
+      const hasCreatedBy = columnNames.includes('created_by');
+      const hasSiteId = columnNames.includes('site_id');
+      
+      // creator_id, owner_id 또는 created_by 컬럼 중 하나는 반드시 있어야 함
+      if (!hasCreatorId && !hasOwnerId && !hasCreatedBy) {
+        throw new NotFoundException('Video not found');
+      }
+      
+      // 우선순위: creator_id > owner_id > created_by
+      const ownerColumn = hasCreatorId ? 'creator_id' : (hasOwnerId ? 'owner_id' : 'created_by');
+      
+      // management_id 형식인지 확인 (YYMMDD-NN 형식)
+      const isManagementId = /^\d{6}-\d{2}$/.test(idOrManagementId);
+      
+      let sql: string;
+      let params: any[];
+      
+      if (isManagementId) {
+        // management_id로 조회
+        if (siteId && hasSiteId) {
+          sql = `SELECT * FROM videos WHERE management_id = ? AND site_id = ? AND ${ownerColumn} = ?`;
+          params = [idOrManagementId, siteId, creatorId];
+        } else {
+          sql = `SELECT * FROM videos WHERE management_id = ? AND ${ownerColumn} = ?`;
+          params = [idOrManagementId, creatorId];
+        }
+      } else {
+        // id로 조회
+        if (siteId && hasSiteId) {
+          sql = `SELECT * FROM videos WHERE id = ? AND site_id = ? AND ${ownerColumn} = ?`;
+          params = [idOrManagementId, siteId, creatorId];
+        } else {
+          sql = `SELECT * FROM videos WHERE id = ? AND ${ownerColumn} = ?`;
+          params = [idOrManagementId, creatorId];
+        }
+      }
+      
+      const video = db.prepare(sql).get(...params) as any;
+      
+      if (!video) {
+        throw new NotFoundException('Video not found');
+      }
+      
+      // Normalize video response with backward-compatible fields
+      return normalizeVideoResponse(video);
+    } catch (error: any) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(`[getCreatorVideoById] Error: ${error.message}`);
+      throw new InternalServerErrorException({
+        message: '영상 조회 중 오류가 발생했습니다.',
+        error: 'Internal Server Error',
+      });
+    }
   }
 
   /**
@@ -188,7 +301,7 @@ export class VideosService {
     }
 
     const db = this.databaseService.getDb();
-
+    
     try {
       // videos 테이블 스키마 확인
       const cols = db
@@ -197,20 +310,22 @@ export class VideosService {
       const columnNames = cols.map((c) => c.name);
 
       // 필요한 컬럼 존재 여부 확인
+      const hasCreatorId = columnNames.includes('creator_id');
       const hasOwnerId = columnNames.includes('owner_id');
       const hasCreatedBy = columnNames.includes('created_by');
       const hasSiteId = columnNames.includes('site_id');
       const hasCreatedAt = columnNames.includes('created_at');
 
-      // owner_id 또는 created_by 컬럼 중 하나는 반드시 있어야 함
-      if (!hasOwnerId && !hasCreatedBy) {
+      // creator_id, owner_id 또는 created_by 컬럼 중 하나는 반드시 있어야 함
+      if (!hasCreatorId && !hasOwnerId && !hasCreatedBy) {
         this.logger.warn(
-          '[getCreatorVideos] videos 테이블에 owner_id 또는 created_by 컬럼이 없습니다. 빈 배열을 반환합니다.',
+          '[getCreatorVideos] videos 테이블에 creator_id, owner_id 또는 created_by 컬럼이 없습니다. 빈 배열을 반환합니다.',
         );
         return { videos: [] };
       }
 
-      const ownerColumn = hasOwnerId ? 'owner_id' : 'created_by';
+      // 우선순위: creator_id > owner_id > created_by
+      const ownerColumn = hasCreatorId ? 'creator_id' : (hasOwnerId ? 'owner_id' : 'created_by');
 
       // site_id 컬럼이 없으면 siteId 필터링 제외
       let sql: string;
@@ -244,8 +359,21 @@ export class VideosService {
         return { videos: [] };
       }
 
-      return {
-        videos: videos,
+      // Normalize video responses with backward-compatible fields
+      const normalizedVideos = normalizeVideoListResponse(videos);
+
+      // Runtime validation: log warnings for missing fields (non-blocking)
+      normalizedVideos.forEach((video, index) => {
+        const validation = validateVideoResponse(video);
+        if (!validation.valid) {
+          this.logger.warn(
+            `[getCreatorVideos] Video at index ${index} (id: ${video.id}) missing fields: ${validation.missingFields.join(', ')}`,
+          );
+        }
+      });
+
+    return {
+        videos: normalizedVideos,
       };
     } catch (error) {
       // 실제 에러 객체를 console.error로 로그에 남기기
@@ -318,11 +446,12 @@ export class VideosService {
   }
 
   /**
-   * management_id 생성 (YYMMDD-001 형식)
-   * site_id + Asia/Seoul 기준 날짜 단위로 증가
+   * management_id 생성 (YYMMDD-01, YYMMDD-02 형식)
+   * Asia/Seoul 기준 날짜 단위로 증가
    * 동시성 안전 처리 (BEGIN IMMEDIATE 트랜잭션 사용)
+   * site_id는 선택적 (있으면 필터링, 없으면 전체에서 증가)
    */
-  private generateManagementId(siteId: string): string {
+  private generateManagementId(siteId?: string | null): string {
     const db = this.databaseService.getDb();
     
     // Asia/Seoul 시간대 기준 날짜 (YYMMDD)
@@ -335,22 +464,54 @@ export class VideosService {
     
     // BEGIN IMMEDIATE 트랜잭션으로 동시성 안전하게 처리
     const transaction = db.transaction(() => {
-      // 해당 site_id와 날짜로 시작하는 management_id 중 최대값 조회
       const prefix = `${datePrefix}-`;
-      const maxRow = db
-        .prepare(`
-          SELECT management_id 
-          FROM videos 
-          WHERE site_id = ? AND management_id LIKE ?
-          ORDER BY management_id DESC 
-          LIMIT 1
-        `)
-        .get(siteId, `${prefix}%`) as any;
+      
+      // site_id가 있으면 site_id로 필터링, 없으면 전체에서 조회
+      let maxRow: any;
+      if (siteId) {
+        // site_id 컬럼 존재 여부 확인
+        const cols = db.prepare(`PRAGMA table_info(videos)`).all() as Array<{ name: string }>;
+        const hasSiteId = cols.some((c) => c.name === 'site_id');
+        
+        if (hasSiteId) {
+          maxRow = db
+            .prepare(`
+              SELECT management_id 
+              FROM videos 
+              WHERE site_id = ? AND management_id LIKE ?
+              ORDER BY management_id DESC 
+              LIMIT 1
+            `)
+            .get(siteId, `${prefix}%`) as any;
+        } else {
+          // site_id 컬럼이 없으면 전체에서 조회
+          maxRow = db
+            .prepare(`
+              SELECT management_id 
+              FROM videos 
+              WHERE management_id LIKE ?
+              ORDER BY management_id DESC 
+              LIMIT 1
+            `)
+            .get(`${prefix}%`) as any;
+        }
+      } else {
+        // site_id가 없으면 전체에서 조회
+        maxRow = db
+          .prepare(`
+            SELECT management_id 
+            FROM videos 
+            WHERE management_id LIKE ?
+            ORDER BY management_id DESC 
+            LIMIT 1
+          `)
+          .get(`${prefix}%`) as any;
+      }
       
       let nextNumber = 1;
       
       if (maxRow?.management_id) {
-        // 기존 최대값에서 번호 추출 (예: "251227-005" -> 5)
+        // 기존 최대값에서 번호 추출 (예: "251227-01" -> 1, "251227-05" -> 5)
         const match = maxRow.management_id.match(/^(\d{6})-(\d+)$/);
         if (match && match[2]) {
           const currentNumber = parseInt(match[2], 10);
@@ -358,8 +519,8 @@ export class VideosService {
         }
       }
       
-      // 새 management_id 생성 (001, 002, ...)
-      const managementId = `${datePrefix}-${String(nextNumber).padStart(3, '0')}`;
+      // 새 management_id 생성 (01, 02, ... 2자리 패딩)
+      const managementId = `${datePrefix}-${String(nextNumber).padStart(2, '0')}`;
       return managementId;
     });
     
@@ -447,34 +608,102 @@ export class VideosService {
       const videoId = this.generateId();
       const now = new Date().toISOString();
       
-      // management_id 생성 (YYMMDD-001 형식)
-      const managementId = this.generateManagementId(siteId);
+      // management_id 생성 (비어있으면 자동 생성, YYMMDD-01 형식)
+      const managementId = this.generateManagementId(siteId || null);
 
-      db.prepare(`
-        INSERT INTO videos (
-          id, site_id, owner_id, platform, video_id, source_url, 
-          title, thumbnail_url, embed_url, language, status, visibility, 
-          management_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        videoId,
-        siteId,
-        userId,
-        platform,
-        extractedVideoId,
-        dto.sourceUrl,
-        title,
-        finalThumbnailUrl,
-        embedUrl,
-        language,
-        status,
-        visibility,
-        managementId,
-        now,
-      );
+      // 컬럼 존재 여부 확인
+      const cols = db.prepare(`PRAGMA table_info(videos)`).all() as Array<{ name: string }>;
+      const columnNames = cols.map((c) => c.name);
+
+      // 기본 필수 컬럼 (항상 존재해야 함)
+      const insertColumns: string[] = [];
+      const insertValues: any[] = [];
+
+      // 필수 컬럼 추가 (순서대로)
+      insertColumns.push('id');
+      insertValues.push(videoId);
+
+      if (columnNames.includes('site_id')) {
+        insertColumns.push('site_id');
+        insertValues.push(siteId || null);
+      }
+
+      insertColumns.push('owner_id');
+      insertValues.push(userId);
+
+      insertColumns.push('creator_id');
+      insertValues.push(userId);
+
+      insertColumns.push('platform');
+      insertValues.push(platform);
+
+      insertColumns.push('video_id');
+      insertValues.push(extractedVideoId);
+
+      if (columnNames.includes('youtube_url')) {
+        insertColumns.push('youtube_url');
+        insertValues.push(platform === 'youtube' ? dto.sourceUrl : null);
+      }
+
+      if (columnNames.includes('source_url')) {
+        insertColumns.push('source_url');
+        insertValues.push(dto.sourceUrl);
+      }
+
+      insertColumns.push('title');
+      insertValues.push(title);
+
+      insertColumns.push('thumbnail_url');
+      insertValues.push(finalThumbnailUrl);
+
+      if (columnNames.includes('embed_url')) {
+        insertColumns.push('embed_url');
+        insertValues.push(embedUrl);
+      }
+
+      insertColumns.push('language');
+      insertValues.push(language);
+
+      if (columnNames.includes('status')) {
+        insertColumns.push('status');
+        insertValues.push(status);
+      }
+
+      if (columnNames.includes('visibility')) {
+        insertColumns.push('visibility');
+        insertValues.push(visibility);
+      }
+
+      insertColumns.push('management_id');
+      insertValues.push(managementId);
+
+      insertColumns.push('view_count');
+      insertValues.push(0);
+
+      insertColumns.push('created_at');
+      insertValues.push(now);
+
+      insertColumns.push('updated_at');
+      insertValues.push(now);
+
+      const placeholders = insertColumns.map(() => '?').join(', ');
+      const sql = `INSERT INTO videos (${insertColumns.join(', ')}) VALUES (${placeholders})`;
+
+      db.prepare(sql).run(...insertValues);
 
       // 생성된 영상 조회
-      const video = db.prepare('SELECT * FROM videos WHERE id = ?').get(videoId) as any;
+      const rawVideo = db.prepare('SELECT * FROM videos WHERE id = ?').get(videoId) as any;
+
+      // Normalize video response with backward-compatible fields
+      const video = normalizeVideoResponse(rawVideo);
+
+      // Runtime validation
+      const validation = validateVideoResponse(video);
+      if (!validation.valid) {
+        this.logger.warn(
+          `[createCreatorVideo] Created video missing fields: ${validation.missingFields.join(', ')}`,
+        );
+      }
 
       this.logger.log(
         `[createCreatorVideo] Video created: id=${videoId}, management_id=${managementId}, title=${title?.substring(0, 30) || 'N/A'}`,
@@ -799,7 +1028,7 @@ export class VideosService {
   }
 
   /**
-   * 조회수 증가
+   * 조회수 증가 (id 기반)
    */
   async incrementView(videoId: string): Promise<{ viewCount: number }> {
     const db = this.databaseService.getDb();
@@ -818,9 +1047,19 @@ export class VideosService {
       }
 
       // 조회수 증가
-      const currentViews = video.views_count ?? 0;
+      const currentViews = video.view_count ?? video.views_count ?? 0;
       const newViewsCount = currentViews + 1;
+      
+      // view_count 컬럼 존재 여부 확인
+      const cols = db.prepare(`PRAGMA table_info(videos)`).all() as Array<{ name: string }>;
+      const hasViewCount = cols.some((c) => c.name === 'view_count');
+      
+      if (hasViewCount) {
+        db.prepare('UPDATE videos SET view_count = ? WHERE id = ?').run(newViewsCount, videoId);
+      } else {
+        // 하위 호환성: views_count 사용
       db.prepare('UPDATE videos SET views_count = ? WHERE id = ?').run(newViewsCount, videoId);
+      }
 
       this.logger.log(`[incrementView] 조회수 증가: videoId=${videoId}, viewCount=${newViewsCount}`);
 
@@ -832,6 +1071,58 @@ export class VideosService {
         throw err;
       }
       this.logger.error(`조회수 증가 실패: ${err.message}`);
+      throw new InternalServerErrorException({
+        message: '조회수 증가 중 오류가 발생했습니다.',
+        error: 'Internal Server Error',
+        details: err.message,
+      });
+    }
+  }
+
+  /**
+   * 조회수 증가 (management_id 기반)
+   */
+  async incrementViewByManagementId(managementId: string): Promise<{ viewCount: number }> {
+    const db = this.databaseService.getDb();
+
+    try {
+      // 영상 존재 확인 (management_id로 조회)
+      const video = db
+        .prepare("SELECT * FROM videos WHERE management_id = ?")
+        .get(managementId) as any;
+
+      if (!video) {
+        throw new NotFoundException({
+          message: '영상을 찾을 수 없습니다.',
+          error: 'Not Found',
+        });
+      }
+
+      // 조회수 증가
+      const currentViews = video.view_count ?? video.views_count ?? 0;
+      const newViewsCount = currentViews + 1;
+      
+      // view_count 컬럼 존재 여부 확인
+      const cols = db.prepare(`PRAGMA table_info(videos)`).all() as Array<{ name: string }>;
+      const hasViewCount = cols.some((c) => c.name === 'view_count');
+      
+      if (hasViewCount) {
+        db.prepare('UPDATE videos SET view_count = ? WHERE management_id = ?').run(newViewsCount, managementId);
+      } else {
+        // 하위 호환성: views_count 사용
+        db.prepare('UPDATE videos SET views_count = ? WHERE management_id = ?').run(newViewsCount, managementId);
+      }
+
+      this.logger.log(`[incrementViewByManagementId] 조회수 증가: managementId=${managementId}, viewCount=${newViewsCount}`);
+
+      return {
+        viewCount: newViewsCount,
+      };
+    } catch (err: any) {
+      if (err instanceof NotFoundException) {
+        throw err;
+      }
+      this.logger.error(`조회수 증가 실패 (management_id): ${err.message}`);
       throw new InternalServerErrorException({
         message: '조회수 증가 중 오류가 발생했습니다.',
         error: 'Internal Server Error',

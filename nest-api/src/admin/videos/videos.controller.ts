@@ -26,7 +26,6 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { UploadsService } from '../../uploads/uploads.service';
 import { DatabaseService } from '../../database/database.service';
 import * as path from 'path';
-import * as fs from 'fs';
 
 @ApiTags('admin/videos')
 @Controller('admin/videos')
@@ -169,7 +168,7 @@ export class AdminVideosController {
   @ApiOperation({
     summary: '관리자 영상 삭제',
     description:
-      '해당 영상 ID를 DB에서 삭제합니다. 썸네일이 로컬(/uploads/thumbnails/...)이면 파일도 삭제 시도합니다. 인증 필요(JWT).',
+      '해당 영상 ID를 DB에서 삭제합니다. 썸네일이 GCS에 있으면 파일도 삭제 시도합니다. 인증 필요(JWT).',
   })
   @ApiResponse({ status: 204, description: '삭제 성공 (No Content)' })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
@@ -192,19 +191,17 @@ export class AdminVideosController {
     // 2) DB 삭제
     db.prepare('DELETE FROM videos WHERE id = ?').run(id);
 
-    // 3) 로컬 썸네일 파일 삭제 시도 (실패해도 무시)
+    // 3) GCS 썸네일 파일 삭제 시도 (실패해도 무시)
     try {
       const thumb: string | null = video.thumbnail_url ?? null;
 
-      // 상대경로 /uploads/thumbnails/xxx.png 형태만 파일삭제 대상으로 처리
-      if (thumb && typeof thumb === 'string' && thumb.startsWith('/uploads/thumbnails/')) {
-        const filename = thumb.split('/').pop();
-        if (filename) {
-          // Cloud Run 저장 경로(/tmp/uploads/thumbnails)
-          const filePath = path.join('/tmp', 'uploads', 'thumbnails', filename);
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-          }
+      if (thumb && typeof thumb === 'string') {
+        // GCS URL 또는 상대 경로 모두 처리
+        const result = await this.uploadsService.deleteThumbnail(thumb);
+        if (result.success) {
+          console.log(`✅ Deleted thumbnail from GCS: ${thumb}`);
+        } else {
+          console.warn(`⚠️ Failed to delete thumbnail from GCS: ${thumb}`);
         }
       }
     } catch (e) {

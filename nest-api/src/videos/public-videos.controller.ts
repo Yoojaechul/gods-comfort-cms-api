@@ -48,6 +48,12 @@ export class PublicVideosController {
     example: 'youtube',
   })
   @ApiQuery({
+    name: 'site_id',
+    required: false,
+    description: '사이트 ID 필터',
+    example: 'gods',
+  })
+  @ApiQuery({
     name: 'limit',
     required: false,
     description: '최대 개수 (기본값: 12, 최대: 50)',
@@ -76,6 +82,7 @@ export class PublicVideosController {
   async getPublicVideos(
     @Query('language') language?: string,
     @Query('platform') platform?: string,
+    @Query('site_id') siteId?: string,
     @Query('limit') limit?: string,
   ) {
     // limit 파라미터 검증 및 변환
@@ -92,6 +99,7 @@ export class PublicVideosController {
     const videos = await this.videosService.getPublicVideos({
       language,
       platform,
+      site_id: siteId,
       limit: limitNum,
     });
 

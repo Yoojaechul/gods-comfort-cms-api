@@ -6,6 +6,7 @@ import {
   UseGuards,
   BadRequestException,
   InternalServerErrorException,
+  HttpCode,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -30,6 +31,7 @@ export class UploadsController {
    * multipart/form-data로 파일을 받아서 서버에 저장
    */
   @Post('thumbnail')
+  @HttpCode(201)
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @UseInterceptors(FileInterceptor('file'))
@@ -56,21 +58,21 @@ export class UploadsController {
       'multipart/form-data로 썸네일 이미지 파일을 업로드합니다. 인증이 필요합니다 (JWT Bearer Token).',
   })
   @ApiResponse({
-    status: 200,
+    status: 201,
     description: '업로드 성공',
     schema: {
       type: 'object',
       properties: {
         thumbnailUrl: {
           type: 'string',
-          example: 'https://example.com/uploads/thumbnails/1234567890_abc123.jpg',
-          description: '업로드된 썸네일 이미지의 전체 URL',
+          example: '/uploads/thumbnails/1234567890_abc123.jpg',
+          description: '업로드된 썸네일 이미지의 상대경로 URL (정적 서빙 경로)',
         },
       },
       required: ['thumbnailUrl'],
     },
     example: {
-      thumbnailUrl: 'https://example.com/uploads/thumbnails/1234567890_abc123.jpg',
+      thumbnailUrl: '/uploads/thumbnails/1234567890_abc123.jpg',
     },
   })
   @ApiResponse({
@@ -150,6 +152,8 @@ export class UploadsController {
     }
   }
 }
+
+
 
 
 

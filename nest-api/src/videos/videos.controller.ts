@@ -4,6 +4,7 @@ import {
   Post,
   Query,
   Body,
+  Param,
   UseGuards,
   Request,
   ForbiddenException,
@@ -15,6 +16,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiQuery,
+  ApiParam,
 } from '@nestjs/swagger';
 import { VideosService } from './videos.service';
 import {
@@ -93,7 +95,7 @@ export class CreatorVideosController {
             url: 'https://www.youtube.com/watch?v=...',
             language: 'ko',
             site_id: 'gods',
-            owner_id: 'creator-001',
+            creator_id: 'creator-001',
           },
         ],
       },
@@ -120,6 +122,68 @@ export class CreatorVideosController {
   }
 
   /**
+   * Creator 영상 단건 조회
+   * JWT 인증 필요 (creator/admin)
+   */
+  @Get('videos/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Creator 영상 단건 조회' })
+  @ApiParam({
+    name: 'id',
+    description: '영상 ID 또는 management_id (YYMMDD-NN 형식)',
+  })
+  @ApiQuery({
+    name: 'site_id',
+    required: false,
+    description: '사이트 ID (선택적, JWT에서 가져온 값 사용)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Creator 영상 단건 조회 성공',
+    schema: {
+      example: {
+        id: 'abc123',
+        management_id: '250115-01',
+        title: '샘플 영상',
+        platform: 'youtube',
+        visibility: 'public',
+        thumbnail_url: 'https://img.youtube.com/vi/.../hqdefault.jpg',
+        url: 'https://www.youtube.com/watch?v=...',
+        youtube_id: 'dQw4w9WgXcQ',
+        source_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        language: 'ko',
+        site_id: 'gods',
+        creator_id: 'creator-001',
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
+  @ApiResponse({ status: 403, description: 'Creator 역할이 아님' })
+  @ApiResponse({ status: 404, description: '영상을 찾을 수 없음' })
+  async getCreatorVideoById(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Query('site_id') siteId?: string,
+  ) {
+    const user = req.user;
+
+    // req.user가 없거나 필수 필드가 없으면 Unauthorized
+    if (!user || !user.id) {
+      throw new ForbiddenException('User information is missing');
+    }
+
+    const targetSiteId = siteId || user.site_id || null;
+
+    // Creator는 자신의 site_id만 접근 가능
+    if (user.role === 'creator' && targetSiteId !== user.site_id) {
+      throw new ForbiddenException('Access denied to this site_id');
+    }
+
+    return this.videosService.getCreatorVideoById(user.id, targetSiteId, id);
+  }
+
+  /**
    * Creator 영상 생성
    * JWT 인증 필요 (creator/admin)
    */
@@ -135,7 +199,7 @@ export class CreatorVideosController {
         video: {
           id: 'abc123def456...',
           site_id: 'gods',
-          owner_id: 'creator-001',
+          creator_id: 'creator-001',
           platform: 'youtube',
           video_id: 'dQw4w9WgXcQ',
           source_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',

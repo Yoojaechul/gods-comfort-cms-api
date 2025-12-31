@@ -296,7 +296,7 @@ function ensureSchema() {
     CREATE TABLE IF NOT EXISTS videos (
       id TEXT PRIMARY KEY,
       site_id TEXT NOT NULL,
-      owner_id TEXT NOT NULL,
+      creator_id TEXT NOT NULL,
       platform TEXT NOT NULL,
       video_id TEXT,
       source_url TEXT NOT NULL,
@@ -310,7 +310,7 @@ function ensureSchema() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT,
       FOREIGN KEY (site_id) REFERENCES sites(id),
-      FOREIGN KEY (owner_id) REFERENCES users(id)
+      FOREIGN KEY (creator_id) REFERENCES users(id)
     );
   `);
 }
@@ -659,12 +659,19 @@ async function getCreatorVideosHandler(req, reply) {
 
   const targetSiteId = siteId || user.site_id;
 
-  // owner_id와 site_id 모두 사용하여 영상 조회
+  // creator_id와 site_id 모두 사용하여 영상 조회
   const videos = db
-    .prepare("SELECT * FROM videos WHERE site_id = ? AND owner_id = ? ORDER BY created_at DESC")
+    .prepare("SELECT * FROM videos WHERE site_id = ? AND creator_id = ? ORDER BY created_at DESC")
     .all(targetSiteId, user.id);
 
-  return { videos: videos || [] };
+  // 프론트 호환을 위한 alias 필드 추가
+  const videosWithAlias = (videos || []).map((video) => ({
+    ...video,
+    youtube_id: video.video_id || null,
+    source_url: video.youtube_url || video.source_url || null,
+  }));
+
+  return { videos: videosWithAlias };
 }
 
 /**
@@ -767,7 +774,7 @@ fastify.post("/creator/videos", { preHandler: requireAuth }, async (req, reply) 
     
     db.prepare(`
       INSERT INTO videos (
-        id, site_id, owner_id, platform, video_id, source_url, 
+        id, site_id, creator_id, platform, video_id, source_url, 
         title, thumbnail_url, embed_url, language, status, visibility, 
         created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

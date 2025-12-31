@@ -111,73 +111,54 @@ export class DatabaseService implements OnModuleInit {
   /**
    * videos 테이블 자동 생성 및 마이그레이션
    * - 테이블이 없으면 생성
-   * - 필요한 컬럼이 없으면 추가 (ALTER TABLE ADD COLUMN)
+   * - 필요한 모든 컬럼이 없으면 추가 (safeAddColumn 패턴)
    */
   private ensureVideosTable() {
     try {
       this.logger.log('[DB] Ensuring videos table...');
 
-      // 1. 테이블이 없으면 생성
+      // 1. 테이블이 없으면 생성 (최소한의 필수 컬럼만 포함)
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS videos (
           id TEXT PRIMARY KEY,
           management_id TEXT,
-          creator_id TEXT,
           owner_id TEXT,
-          site_id TEXT,
-          platform TEXT,
+          creator_id TEXT,
           video_id TEXT,
-          source_url TEXT,
           youtube_url TEXT,
-          url TEXT,
-          title TEXT,
           thumbnail_url TEXT,
-          embed_url TEXT,
+          title TEXT,
+          platform TEXT,
           language TEXT,
-          status TEXT,
-          visibility TEXT,
-          description TEXT,
-          views INTEGER DEFAULT 0,
-          views_count INTEGER DEFAULT 0,
-          likes INTEGER DEFAULT 0,
-          likes_count INTEGER DEFAULT 0,
-          shares_count INTEGER DEFAULT 0,
-          batch_id TEXT,
-          batch_order INTEGER,
-          batch_total INTEGER,
-          created_by TEXT,
+          view_count INTEGER DEFAULT 0,
           created_at TEXT DEFAULT (datetime('now')),
           updated_at TEXT DEFAULT (datetime('now'))
         );
       `);
 
-      // 2. 기존 테이블에 필요한 컬럼들이 있는지 확인하고 없으면 추가
+      // 2. 기존 테이블에 필요한 컬럼들이 있는지 확인하고 없으면 추가 (safeAddColumn 패턴)
       const cols = this.db
         .prepare(`PRAGMA table_info(videos)`)
         .all() as Array<{ name: string }>;
       const columnNames = cols.map((c) => c.name);
 
-      // 필요한 컬럼 목록 (존재하지 않으면 추가)
+      // 필수 컬럼 목록 (존재하지 않으면 추가)
       const requiredColumns = [
         { name: 'management_id', type: 'TEXT' },
-        { name: 'creator_id', type: 'TEXT' },
-        { name: 'owner_id', type: 'TEXT' },
-        { name: 'site_id', type: 'TEXT' },
-        { name: 'platform', type: 'TEXT' },
+        { name: 'owner_id', type: 'TEXT' },  // 기존 코드 호환
+        { name: 'creator_id', type: 'TEXT' },  // 향후 통일용
         { name: 'video_id', type: 'TEXT' },
-        { name: 'source_url', type: 'TEXT' },
         { name: 'youtube_url', type: 'TEXT' },
-        { name: 'title', type: 'TEXT' },
         { name: 'thumbnail_url', type: 'TEXT' },
-        { name: 'embed_url', type: 'TEXT' },
+        { name: 'title', type: 'TEXT' },
+        { name: 'platform', type: 'TEXT' },
         { name: 'language', type: 'TEXT' },
-        { name: 'status', type: 'TEXT' },
-        { name: 'visibility', type: 'TEXT' },
-        { name: 'views_count', type: 'INTEGER DEFAULT 0' },
-        { name: 'likes_count', type: 'INTEGER DEFAULT 0' },
-        { name: 'shares_count', type: 'INTEGER DEFAULT 0' },
+        { name: 'view_count', type: 'INTEGER DEFAULT 0' },
+        { name: 'created_at', type: 'TEXT DEFAULT (datetime(\'now\'))' },
+        { name: 'updated_at', type: 'TEXT DEFAULT (datetime(\'now\'))' },
       ];
 
+      // safeAddColumn: 컬럼이 없으면 추가, 있으면 무시
       for (const col of requiredColumns) {
         if (!columnNames.includes(col.name)) {
           try {
@@ -192,25 +173,13 @@ export class DatabaseService implements OnModuleInit {
         }
       }
 
-      // 3. 인덱스 생성
-      const indexes = [
-        'CREATE INDEX IF NOT EXISTS idx_videos_management_id ON videos(management_id)',
-        'CREATE INDEX IF NOT EXISTS idx_videos_site_id ON videos(site_id)',
-        'CREATE INDEX IF NOT EXISTS idx_videos_owner_id ON videos(owner_id)',
-        'CREATE INDEX IF NOT EXISTS idx_videos_creator_id ON videos(creator_id)',
-        'CREATE INDEX IF NOT EXISTS idx_videos_platform ON videos(platform)',
-        'CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status)',
-        'CREATE INDEX IF NOT EXISTS idx_videos_visibility ON videos(visibility)',
-        'CREATE INDEX IF NOT EXISTS idx_videos_batch_id ON videos(batch_id)',
-        'CREATE INDEX IF NOT EXISTS idx_videos_created_by ON videos(created_by)',
-      ];
-
-      for (const indexSql of indexes) {
-        try {
-          this.db.exec(indexSql);
-        } catch (err: any) {
-          this.logger.warn(`⚠️ Failed to create index: ${err.message}`);
-        }
+      // 3. management_id UNIQUE 인덱스 추가 (있으면 무시)
+      try {
+        this.db.exec(`
+          CREATE UNIQUE INDEX IF NOT EXISTS idx_videos_management_id ON videos(management_id);
+        `);
+      } catch (err: any) {
+        this.logger.warn(`⚠️ Failed to create index idx_videos_management_id: ${err.message}`);
       }
 
       this.logger.log('[DB] ✅ videos table ensured');

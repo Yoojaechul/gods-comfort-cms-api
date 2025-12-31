@@ -36,20 +36,98 @@ export function validateFacebookUrl(url: string): boolean {
   return /facebook\.com/i.test(trimmed) || /fb\.watch/i.test(trimmed);
 }
 
-export function extractYoutubeId(url: string): string | null {
+export function extractYoutubeId(url: string | null | undefined): string | null {
   if (!url || !url.trim()) return null;
   const trimmed = url.trim();
 
+  // 이미 ID만 들어온 경우(대부분 11자)
   if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
 
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/i,
-    /youtube\.com\/.*[?&]v=([a-zA-Z0-9_-]{11})/i,
-  ];
+  // URL 형태 처리
+  try {
+    const u = new URL(trimmed);
 
-  for (const p of patterns) {
-    const m = trimmed.match(p);
-    if (m?.[1]) return m[1];
+    // youtu.be/ID
+    if (u.hostname.includes("youtu.be")) {
+      const id = u.pathname.replace(/^\//, "");
+      if (/^[a-zA-Z0-9_-]{11}$/.test(id)) return id;
+    }
+
+    // youtube.com/watch?v=ID
+    const v = u.searchParams.get("v");
+    if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
+
+    // youtube.com/embed/ID
+    const m1 = u.pathname.match(/\/embed\/([a-zA-Z0-9_-]{11})/);
+    if (m1?.[1]) return m1[1];
+
+    // youtube.com/shorts/ID
+    const m2 = u.pathname.match(/\/shorts\/([a-zA-Z0-9_-]{11})/);
+    if (m2?.[1]) return m2[1];
+
+    // youtube.com/v/ID (구형 URL)
+    const m3 = u.pathname.match(/\/v\/([a-zA-Z0-9_-]{11})/);
+    if (m3?.[1]) return m3[1];
+  } catch {
+    // URL이 아니면 정규식으로 한 번 더 시도
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/|youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/i,
+      /youtube\.com\/.*[?&]v=([a-zA-Z0-9_-]{11})/i,
+      /([a-zA-Z0-9_-]{11})/, // 마지막으로 11자 ID 패턴 찾기
+    ];
+
+    for (const p of patterns) {
+      const m = trimmed.match(p);
+      if (m?.[1]) return m[1];
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Video 객체에서 YouTube ID를 우선순위에 따라 추출합니다.
+ * 우선순위:
+ * 1. video.youtube_id
+ * 2. video.video_id
+ * 3. video.source_url 에서 파싱
+ * 4. video.youtube_url 에서 파싱
+ * 5. video.url 에서 파싱
+ */
+export function extractYouTubeIdFromVideo(video: any): string | null {
+  if (!video) return null;
+
+  // 1. video.youtube_id
+  if (video.youtube_id && typeof video.youtube_id === "string") {
+    const id = extractYoutubeId(video.youtube_id);
+    if (id) return id;
+  }
+
+  // 2. video.video_id
+  if (video.video_id && typeof video.video_id === "string") {
+    const id = extractYoutubeId(video.video_id);
+    if (id) return id;
+  }
+
+  // 3. video.source_url 에서 파싱
+  const sourceUrl = video.source_url || video.sourceUrl;
+  if (sourceUrl && typeof sourceUrl === "string") {
+    const id = extractYoutubeId(sourceUrl);
+    if (id) return id;
+  }
+
+  // 4. video.youtube_url 에서 파싱
+  const youtubeUrl = video.youtube_url || video.youtubeUrl;
+  if (youtubeUrl && typeof youtubeUrl === "string") {
+    const id = extractYoutubeId(youtubeUrl);
+    if (id) return id;
+  }
+
+  // 5. video.url 에서 파싱
+  const url = video.url || video.videoUrl;
+  if (url && typeof url === "string") {
+    const id = extractYoutubeId(url);
+    if (id) return id;
   }
 
   return null;

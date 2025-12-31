@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import VideoFormModal from "./admin/VideoFormModal";
-import { normalizeThumbnailUrl } from "../utils/videoMetadata";
+import { normalizeThumbnailUrl, extractYoutubeId, extractYouTubeIdFromVideo } from "../utils/videoMetadata";
 import { getRealPlaybackCount } from "../utils/videoMetrics";
-import { extractYoutubeId } from "../utils/videoMetadata";
 import { mapLanguageToEnglish } from "../utils/languageMapper";
 import { apiDelete } from "../lib/apiClient";
 import "./VideoTable.css";
@@ -205,19 +204,11 @@ export default function VideoTable({
       return normalizedThumbnailUrl;
     }
 
-    // YouTube인 경우 기본 썸네일 생성
-    if ((video.video_type === "youtube" || (video as any).sourceType === "youtube") && video.youtube_id) {
-      return `https://img.youtube.com/vi/${video.youtube_id}/hqdefault.jpg`;
-    }
-
-    // YouTube sourceUrl에서 추출
+    // YouTube인 경우 기본 썸네일 생성 (개선된 YouTube ID 추출 함수 사용)
     if (video.video_type === "youtube" || (video as any).sourceType === "youtube") {
-      const sourceUrl = video.sourceUrl || (video as any).source_url;
-      if (sourceUrl) {
-        const youtubeId = extractYoutubeId(sourceUrl);
-        if (youtubeId) {
-          return `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
-        }
+      const youtubeId = extractYouTubeIdFromVideo(video);
+      if (youtubeId) {
+        return `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
       }
     }
 
@@ -235,14 +226,11 @@ export default function VideoTable({
     const platform = video.video_type || (video as any).sourceType || (video as any).platform || "";
     let videoId = video.youtube_id || (video as any).video_id || "";
 
-    // video_id가 없으면 source_url에서 추출 시도 (YouTube만)
-    if (!videoId) {
-      const sourceUrl = video.sourceUrl || (video as any).source_url;
-      if (sourceUrl && (platform === "youtube" || (video as any).sourceType === "youtube")) {
-        const extractedId = extractYoutubeId(sourceUrl);
-        if (extractedId) {
-          videoId = extractedId;
-        }
+    // video_id가 없으면 개선된 함수로 추출 시도 (YouTube만)
+    if (!videoId && (platform === "youtube" || (platform as string).toLowerCase().includes("youtube"))) {
+      const extractedId = extractYouTubeIdFromVideo(video);
+      if (extractedId) {
+        videoId = extractedId;
       }
     }
 
@@ -258,10 +246,12 @@ export default function VideoTable({
     return "제목 없음";
   };
 
-  // 조회수 가져오기
+  // 조회수 가져오기 (view_count 또는 views 필드 지원)
   const getViewsCount = (video: Video): number => {
     return (
+      (video as any).view_count ||
       (video as any).views_count ||
+      (video as any).views ||
       video.views_actual ||
       video.views_display ||
       getRealPlaybackCount(video) ||
@@ -279,11 +269,9 @@ export default function VideoTable({
     const title = getTitle(video);
 
     // ✅ YouTube는 popup에 iframe로 재생
-    if (platform === "youtube") {
-      const youtubeId =
-        video.youtube_id ||
-        extractYoutubeId(video.sourceUrl || (video as any).source_url || "") ||
-        "";
+    if (platform === "youtube" || platform.toLowerCase().includes("youtube")) {
+      // 우선순위에 따라 YouTube ID 추출
+      const youtubeId = extractYouTubeIdFromVideo(video);
 
       if (!youtubeId) {
         alert("YouTube ID를 찾을 수 없습니다. source_url/youtube_id를 확인해 주세요.");
@@ -467,3 +455,5 @@ export default function VideoTable({
     </>
   );
 }
+
+

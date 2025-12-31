@@ -104,7 +104,7 @@ function ensureSchema() {
     CREATE TABLE IF NOT EXISTS videos (
       id TEXT PRIMARY KEY,
       site_id TEXT NOT NULL,
-      owner_id TEXT NOT NULL,
+      creator_id TEXT NOT NULL,
       platform TEXT NOT NULL,
       video_id TEXT,
       source_url TEXT NOT NULL,
@@ -126,7 +126,7 @@ function ensureSchema() {
       stats_updated_at TEXT,
       stats_updated_by TEXT,
       FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
-      FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+      FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS visits (
@@ -170,7 +170,7 @@ function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_users_site_id ON users(site_id);
 
     CREATE INDEX IF NOT EXISTS idx_videos_site_id ON videos(site_id);
-    CREATE INDEX IF NOT EXISTS idx_videos_owner_id ON videos(owner_id);
+    CREATE INDEX IF NOT EXISTS idx_videos_creator_id ON videos(creator_id);
     CREATE INDEX IF NOT EXISTS idx_videos_visibility ON videos(visibility);
     CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at);
 
