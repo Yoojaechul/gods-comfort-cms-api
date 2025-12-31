@@ -550,6 +550,7 @@ export class VideosService {
       facebook_url?: string;
       title?: string;
       thumbnailUrl?: string;
+      thumbnail_url?: string;
       language?: string;
       status?: string;
       visibility?: string;
@@ -624,7 +625,8 @@ export class VideosService {
 
     // 기타 필드
     const title = dto.title?.trim() || null;
-    const thumbnailUrl = dto.thumbnailUrl?.trim() || null;
+    // thumbnailUrl 또는 thumbnail_url 지원 (우선순위: thumbnailUrl > thumbnail_url)
+    const thumbnailUrl = (dto.thumbnailUrl || (dto as any).thumbnail_url)?.trim() || null;
     const language = dto.language || 'en';
     const status = dto.status || 'active';
     const visibility = dto.visibility || 'public';
@@ -796,6 +798,7 @@ export class VideosService {
       facebook_url?: string;
       title?: string;
       thumbnailUrl?: string;
+      thumbnail_url?: string;
       language?: string;
       status?: string;
       visibility?: string;
@@ -919,7 +922,10 @@ export class VideosService {
 
       // 기타 필드 업데이트
       const title = dto.title !== undefined ? (dto.title?.trim() || null) : existingVideo.title;
-      const thumbnailUrl = dto.thumbnailUrl !== undefined ? (dto.thumbnailUrl?.trim() || null) : existingVideo.thumbnail_url;
+      // thumbnailUrl 또는 thumbnail_url 지원 (우선순위: thumbnailUrl > thumbnail_url)
+      const thumbnailUrl = (dto.thumbnailUrl !== undefined || (dto as any).thumbnail_url !== undefined)
+        ? ((dto.thumbnailUrl || (dto as any).thumbnail_url)?.trim() || null)
+        : existingVideo.thumbnail_url;
       const language = dto.language || existingVideo.language || 'en';
       const status = dto.status || existingVideo.status || 'active';
       const visibility = dto.visibility || existingVideo.visibility || 'public';
@@ -975,7 +981,7 @@ export class VideosService {
         updateValues.push(title);
       }
 
-      if (dto.thumbnailUrl !== undefined || (!thumbnailUrl && platform === 'youtube' && extractedVideoId)) {
+      if (dto.thumbnailUrl !== undefined || (dto as any).thumbnail_url !== undefined || (!thumbnailUrl && platform === 'youtube' && extractedVideoId)) {
         updateColumns.push('thumbnail_url');
         updateValues.push(finalThumbnailUrl);
       }

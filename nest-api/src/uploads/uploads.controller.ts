@@ -66,13 +66,19 @@ export class UploadsController {
         thumbnailUrl: {
           type: 'string',
           example: '/uploads/thumbnails/1234567890_abc123.jpg',
-          description: '업로드된 썸네일 이미지의 상대경로 URL (정적 서빙 경로)',
+          description: '업로드된 썸네일 이미지의 URL (GCS 공개 URL 또는 로컬 상대경로)',
+        },
+        url: {
+          type: 'string',
+          example: '/uploads/thumbnails/1234567890_abc123.jpg',
+          description: '썸네일 접근 가능한 URL (thumbnailUrl과 동일한 값)',
         },
       },
-      required: ['thumbnailUrl'],
+      required: ['thumbnailUrl', 'url'],
     },
     example: {
       thumbnailUrl: '/uploads/thumbnails/1234567890_abc123.jpg',
+      url: '/uploads/thumbnails/1234567890_abc123.jpg',
     },
   })
   @ApiResponse({
@@ -128,7 +134,7 @@ export class UploadsController {
   })
   async uploadThumbnail(
     @UploadedFile() file: Express.Multer.File,
-  ): Promise<{ thumbnailUrl: string }> {
+  ): Promise<{ thumbnailUrl: string; url: string }> {
     if (!file) {
       throw new BadRequestException('No file uploaded');
     }

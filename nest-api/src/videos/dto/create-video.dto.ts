@@ -77,12 +77,20 @@ export class CreateVideoDto {
   title?: string;
 
   @ApiPropertyOptional({
-    description: '썸네일 URL',
+    description: '썸네일 URL (camelCase)',
     example: 'https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg',
   })
   @IsString()
   @IsOptional()
   thumbnailUrl?: string;
+
+  @ApiPropertyOptional({
+    description: '썸네일 URL (snake_case)',
+    example: 'https://img.youtube.com/vi/dQw4w9WgXcQ/maxresdefault.jpg',
+  })
+  @IsString()
+  @IsOptional()
+  thumbnail_url?: string;
 
   @ApiPropertyOptional({
     description: '언어 코드',
