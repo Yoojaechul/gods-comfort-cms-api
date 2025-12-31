@@ -156,7 +156,7 @@ export class AdminVideosController {
    * - DELETE /admin/videos/:id
    * - 성공 시 204 No Content
    * - videos 테이블 row 삭제
-   * - thumbnail_url이 /uploads/thumbnails/... 이면 /tmp/uploads/thumbnails 파일도 삭제 시도
+   * - thumbnail_url이 /uploads/thumbnails/... 이면 ${UPLOADS_BASE_PATH}/thumbnails 파일도 삭제 시도 (기본값: /app/data/uploads/thumbnails)
    */
   @Delete(':id')
   @HttpCode(204)

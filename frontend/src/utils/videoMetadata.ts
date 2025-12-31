@@ -203,7 +203,7 @@ export async function fetchYouTubeMetadata(
 /**
  * 미디어 URL 해석 함수
  * - https:// 또는 http://로 시작하면 그대로 반환
- * - "/uploads/..."로 시작하면 VITE_API_BASE_URL을 prefix로 붙여서 절대 URL로 변환
+ * - "/"로 시작하는 상대경로(예: "/uploads/...")는 VITE_API_BASE_URL을 prefix로 붙여서 절대 URL로 변환
  * - 기존 유튜브 썸네일 동작은 절대 깨지지 않게 보장
  */
 export function resolveMediaUrl(url: string | null | undefined): string | null {
@@ -216,16 +216,17 @@ export function resolveMediaUrl(url: string | null | undefined): string | null {
     return trimmed;
   }
 
-  // "/uploads/..."로 시작하면 VITE_API_BASE_URL을 prefix로 붙여서 절대 URL로 변환
-  if (trimmed.startsWith("/uploads/")) {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+  // "/"로 시작하는 상대경로는 VITE_CMS_API_BASE_URL 또는 VITE_API_BASE_URL을 prefix로 붙여서 절대 URL로 변환
+  if (trimmed.startsWith("/")) {
+    const env = import.meta.env;
+    const apiBaseUrl = env.VITE_CMS_API_BASE_URL || env.VITE_API_BASE_URL;
     if (!apiBaseUrl) {
-      console.warn("[resolveMediaUrl] VITE_API_BASE_URL이 설정되지 않았습니다.");
+      console.warn("[resolveMediaUrl] VITE_CMS_API_BASE_URL 또는 VITE_API_BASE_URL이 설정되지 않았습니다.");
       return trimmed;
     }
 
     // base URL 끝의 슬래시 제거
-    const normalizedBase = apiBaseUrl.endsWith("/") ? apiBaseUrl.slice(0, -1) : apiBaseUrl;
+    const normalizedBase = String(apiBaseUrl).trim().replace(/\/+$/, "");
     return `${normalizedBase}${trimmed}`;
   }
 

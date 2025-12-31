@@ -73,9 +73,10 @@ export async function uploadThumbnail(
 
   const headers: HeadersInit = {};
   
-  // Authorization 토큰 추가 (localStorage에서 가져옴)
+  // Authorization 토큰 추가 (apiClient와 동일한 방식)
+  // localStorage에서 토큰 가져오기 (다른 API 요청과 동일한 인증 방식)
   const token = localStorage.getItem("cms_token");
-  if (token && token.trim() && token !== "dummy-token") {
+  if (token && token.trim().length > 0) {
     headers["Authorization"] = `Bearer ${token.trim()}`;
   }
 

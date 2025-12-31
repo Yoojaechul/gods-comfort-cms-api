@@ -104,6 +104,53 @@ const NEST_API_BASE = "http://localhost:8788";
 // 전역 접근을 위해 window 객체에도 할당
 window.NEST_API_BASE = NEST_API_BASE;
 
+/**
+ * NestJS API 호출 헬퍼 (JWT 인증)
+ * FormData 업로드도 지원 (Authorization 헤더 자동 포함)
+ * @param {string} endpoint - API 엔드포인트 (예: '/uploads/thumbnail')
+ * @param {object} options - fetch 옵션 (method, body, headers 등)
+ * @returns {Promise<any>} API 응답 데이터
+ */
+async function nestApiCall(endpoint, options = {}) {
+  const token = getToken();
+  if (!token) {
+    throw new Error('JWT 토큰이 없습니다. 로그인해주세요.');
+  }
+
+  // FormData인지 확인 (FormData는 Content-Type을 자동으로 설정해야 함)
+  const isFormData = options.body instanceof FormData;
+
+  const headers = {
+    'Authorization': `Bearer ${token}`,
+    ...options.headers,
+  };
+
+  // FormData가 아닌 경우에만 Content-Type을 application/json으로 설정
+  if (!isFormData && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const apiBase = window.NEST_API_BASE || NEST_API_BASE || 'http://localhost:8788';
+  const response = await fetch(`${apiBase}${endpoint}`, {
+    ...options,
+    headers,
+  });
+
+  if (response.status === 401 || response.status === 403) {
+    console.error('[nestApiCall] 인증 실패 - 상태 코드:', response.status);
+    alert('인증이 만료되었습니다. 다시 로그인해주세요.');
+    logout();
+    throw new Error('인증이 만료되었습니다. 다시 로그인해주세요.');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(error.message || error.error || `HTTP ${response.status}`);
+  }
+
+  return await response.json();
+}
+
 // =====================
 //   영상 관리 함수
 // =====================

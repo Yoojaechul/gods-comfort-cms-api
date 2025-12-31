@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import * as path from 'path';
 
 import { AppController } from './app.controller';
 
@@ -21,7 +23,28 @@ import { CreatorVideosModule } from './creator/videos/videos.module';
   imports: [
     DatabaseModule,
     AuthModule,
-ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true }),
+
+    // 정적 파일 서빙: /uploads -> /app/data/uploads (Cloud Run 영구 볼륨)
+    ServeStaticModule.forRoot({
+      rootPath: process.env.UPLOADS_BASE_PATH || '/app/data/uploads',
+      serveRoot: '/uploads',
+      serveStaticOptions: {
+        setHeaders: (res, filePath, stat) => {
+          // 파일 확장자에 따라 Content-Type 설정
+          const ext = path.extname(filePath).toLowerCase();
+          if (ext === '.png') {
+            res.setHeader('Content-Type', 'image/png');
+          } else if (ext === '.jpg' || ext === '.jpeg') {
+            res.setHeader('Content-Type', 'image/jpeg');
+          } else if (ext === '.webp') {
+            res.setHeader('Content-Type', 'image/webp');
+          } else if (ext === '.gif') {
+            res.setHeader('Content-Type', 'image/gif');
+          }
+        },
+      },
+    }),
 
     VideosModule,
     AnalyticsModule,

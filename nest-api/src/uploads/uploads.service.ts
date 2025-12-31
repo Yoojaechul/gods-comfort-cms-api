@@ -16,7 +16,7 @@ export class UploadsService {
     // GCS_BUCKET 환경변수 확인
     this.gcsBucket = this.configService.get<string>("GCS_BUCKET") || null;
 
-    // UPLOADS_BASE_PATH 환경변수 확인 (기본값: /app/data/uploads)
+    // UPLOADS_BASE_PATH 환경변수 확인 (기본값: /app/data/uploads - Cloud Run 영구 볼륨)
     this.uploadsBasePath = this.configService.get<string>("UPLOADS_BASE_PATH") || "/app/data/uploads";
     console.log(`[UploadsService] uploadsBasePath: ${this.uploadsBasePath}`);
 
@@ -102,7 +102,9 @@ export class UploadsService {
       }
     } else {
       // 로컬 파일 시스템 모드
-      const thumbnailsDir = path.join(this.uploadsBasePath, "thumbnails");
+      const thumbnailsDir = path.join(this.uploadsBasePath, 'thumbnails');
+      
+      // 디렉토리가 없으면 생성 (mkdir -p)
       await fs.promises.mkdir(thumbnailsDir, { recursive: true });
 
       const filePath = path.join(thumbnailsDir, filename);
@@ -199,7 +201,7 @@ export class UploadsService {
         filename = thumbnailPathOrUrl;
       }
 
-      const filePath = path.join(this.uploadsBasePath, "thumbnails", filename);
+      const filePath = path.join(this.uploadsBasePath, 'thumbnails', filename);
 
       if (fs.existsSync(filePath)) {
         await fs.promises.unlink(filePath);
@@ -217,3 +219,5 @@ export class UploadsService {
     }
   }
 }
+
+

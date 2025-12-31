@@ -430,6 +430,7 @@ function getJwtToken() {
 
 /**
  * NestJS API 호출 헬퍼 (JWT 인증)
+ * FormData 업로드도 지원 (Content-Type 자동 설정)
  */
 async function nestApiCall(endpoint, options = {}) {
   const token = getJwtToken();
@@ -437,11 +438,18 @@ async function nestApiCall(endpoint, options = {}) {
     throw new Error('JWT 토큰이 없습니다. 로그인해주세요.');
   }
 
+  // FormData인지 확인 (FormData는 Content-Type을 자동으로 설정해야 함)
+  const isFormData = options.body instanceof FormData;
+
   const headers = {
     'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json',
     ...options.headers,
   };
+
+  // FormData가 아닌 경우에만 Content-Type을 application/json으로 설정
+  if (!isFormData && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   const response = await fetch(`${NEST_API_BASE}${endpoint}`, {
     ...options,

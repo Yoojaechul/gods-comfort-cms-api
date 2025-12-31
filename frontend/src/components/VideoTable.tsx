@@ -198,11 +198,30 @@ export default function VideoTable({
       (video as any).thumbnail_image ||
       null;
 
-    // 상대경로를 절대경로로 변환 (resolveMediaUrl 사용)
-    const resolvedThumbnailUrl = rawThumbnailUrl ? resolveMediaUrl(rawThumbnailUrl) : null;
+    // rawThumbnailUrl이 실제로 유효한 값인지 확인 (빈 문자열, 공백만 있는 경우 제외)
+    if (!rawThumbnailUrl || typeof rawThumbnailUrl !== "string" || !rawThumbnailUrl.trim()) {
+      // YouTube인 경우 기본 썸네일 생성 (개선된 YouTube ID 추출 함수 사용)
+      if (video.video_type === "youtube" || (video as any).sourceType === "youtube") {
+        const youtubeId = extractYouTubeIdFromVideo(video);
+        if (youtubeId) {
+          return `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
+        }
+      }
+      return null;
+    }
 
+    // 상대경로를 절대경로로 변환 (resolveMediaUrl 사용)
+    const resolvedThumbnailUrl = resolveMediaUrl(rawThumbnailUrl);
+
+    // resolveMediaUrl이 null을 반환하더라도 원본 값이 있으면 원본 사용 (fallback)
     if (resolvedThumbnailUrl) {
       return resolvedThumbnailUrl;
+    }
+
+    // resolveMediaUrl이 null을 반환했지만 원본 값이 있으면 원본 반환
+    // (예: 예상치 못한 형식의 URL이지만 시도해볼 가치는 있음)
+    if (rawThumbnailUrl && rawThumbnailUrl.trim()) {
+      return rawThumbnailUrl.trim();
     }
 
     // YouTube인 경우 기본 썸네일 생성 (개선된 YouTube ID 추출 함수 사용)
@@ -394,7 +413,7 @@ export default function VideoTable({
                     <td className="video-table-management-no-cell">{managementNo}</td>
                     <td className="video-table-thumbnail-cell">
                       <div className="video-table-thumbnail-wrapper">
-                        {thumbnailUrl ? (
+                        {thumbnailUrl && typeof thumbnailUrl === "string" && thumbnailUrl.trim() ? (
                           <img
                             src={thumbnailUrl}
                             alt={title}
@@ -412,7 +431,9 @@ export default function VideoTable({
                         ) : null}
                         <div
                           className="video-table-thumbnail-placeholder"
-                          style={{ display: thumbnailUrl ? "none" : "flex" }}
+                          style={{ 
+                            display: (thumbnailUrl && typeof thumbnailUrl === "string" && thumbnailUrl.trim()) ? "none" : "flex" 
+                          }}
                         >
                           No Image
                         </div>
@@ -482,6 +503,7 @@ export default function VideoTable({
     </>
   );
 }
+
 
 
 
