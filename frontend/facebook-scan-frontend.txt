@@ -1,0 +1,10 @@
+﻿
+Path                                                                                    
+----                                                                                    
+C:\Users\consu_rutwdcg\SynologyDrive\999. cms_api\frontend\src\components\VideoPrevie...
+C:\Users\consu_rutwdcg\SynologyDrive\999. cms_api\frontend\src\components\VideoPrevie...
+C:\Users\consu_rutwdcg\SynologyDrive\999. cms_api\frontend\src\pages\FacebookKeysPage...
+C:\Users\consu_rutwdcg\SynologyDrive\999. cms_api\frontend\src\utils\facebookSdk.ts     
+C:\Users\consu_rutwdcg\SynologyDrive\999. cms_api\frontend\src\utils\facebookSdk.ts     
+
+

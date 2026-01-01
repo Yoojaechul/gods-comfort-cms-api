@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
+import { ensureFacebookSdkInitialized, parseXFBML } from "../utils/facebookSdk";
 
 type VideoPlatform = "youtube" | "facebook" | "unknown";
 
@@ -93,6 +94,16 @@ function buildFacebookEmbedUrl(originalUrl?: string) {
 
 export default function VideoPreviewModal(props: VideoPreviewModalProps) {
   const { isOpen, onClose, url, youtubeId, platform, title } = props;
+  const facebookContainerRef = useRef<HTMLDivElement>(null);
+
+  const guessedPlatform: VideoPlatform = useMemo(() => {
+    const p = (platform || "").toLowerCase();
+    if (p.includes("youtube")) return "youtube";
+    if (p.includes("facebook")) return "facebook";
+    if (isFacebookUrl(url)) return "facebook";
+    if (extractYouTubeId(youtubeId || url || "")) return "youtube";
+    return "unknown";
+  }, [platform, url, youtubeId]);
 
   // ESC로 닫기
   useEffect(() => {
@@ -104,14 +115,47 @@ export default function VideoPreviewModal(props: VideoPreviewModalProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isOpen, onClose]);
 
-  const guessedPlatform: VideoPlatform = useMemo(() => {
-    const p = (platform || "").toLowerCase();
-    if (p.includes("youtube")) return "youtube";
-    if (p.includes("facebook")) return "facebook";
-    if (isFacebookUrl(url)) return "facebook";
-    if (extractYouTubeId(youtubeId || url || "")) return "youtube";
-    return "unknown";
-  }, [platform, url, youtubeId]);
+  // Facebook 플랫폼일 때 SDK 초기화 및 XFBML 파싱
+  useEffect(() => {
+    if (!isOpen) return;
+    if (guessedPlatform !== "facebook") return;
+
+    let mounted = true;
+
+    (async () => {
+      try {
+        // SDK 초기화 확인 및 필요시 로드
+        const initSuccess = await ensureFacebookSdkInitialized();
+        
+        if (!mounted) return;
+
+        if (initSuccess) {
+          // XFBML 파싱 (컨테이너가 있으면 해당 컨테이너만, 없으면 전체 문서)
+          if (facebookContainerRef.current) {
+            parseXFBML(facebookContainerRef.current);
+          } else {
+            // 약간의 지연 후 파싱 (DOM이 완전히 렌더링된 후)
+            setTimeout(() => {
+              if (mounted && facebookContainerRef.current) {
+                parseXFBML(facebookContainerRef.current);
+              }
+            }, 100);
+          }
+        } else {
+          console.warn(
+            "[VideoPreviewModal] Facebook SDK 초기화 실패 (AppId 없음). " +
+            "iframe fallback으로 표시되지만 일부 기능이 제한될 수 있습니다."
+          );
+        }
+      } catch (error) {
+        console.error("[VideoPreviewModal] Facebook SDK 초기화/파싱 실패:", error);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [isOpen, guessedPlatform, url]);
 
   const youtubeEmbed = useMemo(() => buildYouTubeEmbedUrl(youtubeId || url), [youtubeId, url]);
   const facebookEmbed = useMemo(() => buildFacebookEmbedUrl(url), [url]);
@@ -169,7 +213,7 @@ export default function VideoPreviewModal(props: VideoPreviewModalProps) {
       }
 
       return (
-        <div style={{ width: "100%", height: "100%" }}>
+        <div ref={facebookContainerRef} style={{ width: "100%", height: "100%" }}>
           <iframe
             key={facebookEmbed}
             src={facebookEmbed}

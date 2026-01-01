@@ -3,6 +3,10 @@
  * SDK를 한 번만 로드하고 재사용
  */
 
+import { getApiBase } from "../config";
+
+const STORAGE_TOKEN_KEY = "cms_token";
+
 declare global {
   interface Window {
     FB?: {
@@ -15,17 +19,80 @@ declare global {
   }
 }
 
-let sdkLoadingPromise: Promise<void> | null = null;
+let sdkLoadingPromise: Promise<boolean> | null = null;
 let sdkLoaded = false;
+let sdkInitSuccess = false;
 
 /**
- * Facebook SDK를 로드합니다 (한 번만)
- * @returns Promise<void> - SDK 로드 완료 시 resolve
+ * Facebook AppId를 API에서 가져옵니다
+ * /my/facebook-keys 시도 → 실패 시 /admin/facebook-keys fallback
+ * @returns Promise<string | null> - appId 또는 null
  */
-export function loadFacebookSDK(): Promise<void> {
+async function fetchFacebookAppId(): Promise<string | null> {
+  const token = localStorage.getItem(STORAGE_TOKEN_KEY);
+  if (!token) {
+    console.warn("[facebookSdk] 토큰이 없어 Facebook AppId를 가져올 수 없습니다.");
+    return null;
+  }
+
+  const apiBase = getApiBase();
+
+  // 1. /my/facebook-keys 시도
+  try {
+    const response = await fetch(`${apiBase}/my/facebook-keys`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+
+    if (response.ok) {
+      const data = await response.json().catch(() => null);
+      const keys = data?.keys || (Array.isArray(data) ? data : []);
+      const firstKey = keys[0] || keys;
+      const appId = firstKey?.app_id || firstKey?.appId;
+      if (appId && typeof appId === "string" && appId.trim()) {
+        return appId.trim();
+      }
+    }
+  } catch (error) {
+    // 401/403/404 등의 오류는 fallback으로 진행
+    console.log("[facebookSdk] /my/facebook-keys 실패, /admin/facebook-keys 시도:", error);
+  }
+
+  // 2. /admin/facebook-keys fallback 시도
+  try {
+    const response = await fetch(`${apiBase}/admin/facebook-keys`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+    });
+
+    if (response.ok) {
+      const data = await response.json().catch(() => null);
+      const keys = data?.keys || (Array.isArray(data) ? data : []);
+      const firstKey = keys[0] || keys;
+      const appId = firstKey?.app_id || firstKey?.appId;
+      if (appId && typeof appId === "string" && appId.trim()) {
+        return appId.trim();
+      }
+    }
+  } catch (error) {
+    console.warn("[facebookSdk] /admin/facebook-keys도 실패:", error);
+  }
+
+  return null;
+}
+
+/**
+ * Facebook SDK를 로드하고 초기화합니다 (한 번만)
+ * @returns Promise<boolean> - SDK 초기화 성공 여부 (true: 성공, false: appId 없음)
+ */
+export function loadFacebookSDK(): Promise<boolean> {
   // 이미 로드되었으면 즉시 resolve
   if (sdkLoaded && window.FB) {
-    return Promise.resolve();
+    return Promise.resolve(sdkInitSuccess);
   }
 
   // 이미 로딩 중이면 기존 Promise 반환
@@ -34,7 +101,7 @@ export function loadFacebookSDK(): Promise<void> {
   }
 
   // SDK 로드 시작
-  sdkLoadingPromise = new Promise((resolve, reject) => {
+  sdkLoadingPromise = new Promise<boolean>((resolve) => {
     // fb-root div가 없으면 생성
     if (!document.getElementById("fb-root")) {
       const fbRoot = document.createElement("div");
@@ -49,17 +116,37 @@ export function loadFacebookSDK(): Promise<void> {
     }
 
     // fbAsyncInit 콜백 설정
-    window.fbAsyncInit = () => {
+    window.fbAsyncInit = async () => {
       if (window.FB) {
-        // SDK 초기화 (필요한 경우)
-        window.FB.init({
+        // API에서 appId 가져오기
+        const appId = await fetchFacebookAppId();
+
+        // FB.init 설정
+        const initConfig: any = {
           xfbml: true,
           version: "v19.0",
-        });
+        };
+
+        if (appId) {
+          initConfig.appId = appId;
+          sdkInitSuccess = true;
+        } else {
+          console.warn(
+            "[facebookSdk] Facebook AppId를 찾을 수 없습니다. " +
+            "Facebook 임베드가 제대로 작동하지 않을 수 있습니다. " +
+            "Facebook Keys 설정 페이지에서 AppId를 확인하세요."
+          );
+          sdkInitSuccess = false;
+        }
+
+        // SDK 초기화
+        window.FB.init(initConfig);
         sdkLoaded = true;
-        resolve();
+        resolve(sdkInitSuccess);
       } else {
-        reject(new Error("Facebook SDK 로드 실패: window.FB가 없습니다."));
+        console.error("[facebookSdk] Facebook SDK 로드 실패: window.FB가 없습니다.");
+        sdkInitSuccess = false;
+        resolve(false);
       }
     };
 
@@ -72,13 +159,26 @@ export function loadFacebookSDK(): Promise<void> {
     script.crossOrigin = "anonymous";
 
     script.onerror = () => {
-      reject(new Error("Facebook SDK 스크립트 로드 실패"));
+      console.error("[facebookSdk] Facebook SDK 스크립트 로드 실패");
+      sdkInitSuccess = false;
+      resolve(false);
     };
 
     document.body.appendChild(script);
   });
 
   return sdkLoadingPromise;
+}
+
+/**
+ * Facebook SDK가 초기화되었는지 확인하고 필요시 로드합니다
+ * @returns Promise<boolean> - SDK 초기화 성공 여부
+ */
+export async function ensureFacebookSdkInitialized(): Promise<boolean> {
+  if (sdkLoaded && window.FB) {
+    return sdkInitSuccess;
+  }
+  return await loadFacebookSDK();
 }
 
 /**
